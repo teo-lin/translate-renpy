@@ -62,206 +62,6 @@ languages:
   - code: 'hu'
     name: Hungarian
 available_models:
-  aya23:
-    name: aya23
-    languages_supported: 23
-    params: 8B
-    format: GGUF
-    repo: bartowski/aya-23-8B-GGUF
-    http_link: https://huggingface.co/bartowski/aya-23-8B-GGUF
-    file: aya-23-8B-Q4_K_M.gguf
-    size: 4.8GB
-    destination: models/aya23/aya-23-8B-Q4_K_M.gguf
-    script: scripts/translate.py
-    description: Multilingual LLM GGUF, 8B params, Flores 34.8, VRAM 5.8GB. Uncensored,
-      GGUF, 23 languages. Slower, larger VRAM.
-    languages:
-    - 'ro'
-    - 'es'
-    - 'fr'
-    - 'de'
-    - 'it'
-    - 'pt'
-    - 'ru'
-    - 'tr'
-    - 'cs'
-    - 'pl'
-    - 'uk'
-    - 'bg'
-    - 'zh'
-    - 'ja'
-    - 'ko'
-    - 'vi'
-    - 'th'
-    - 'id'
-    - 'ar'
-    - 'he'
-    - 'hi'
-    - 'nl'
-    - 'fi'
-  helsinkiRo:
-    name: helsinkiRo
-    params: 0.07B
-    format: safetensors
-    languages_supported: 1
-    repo: Helsinki-NLP/opus-mt-en-ro
-    http_link: https://huggingface.co/Helsinki-NLP/opus-mt-en-ro
-    file: null
-    size: ~0.3GB
-    destination: models/helsinkiRo
-    script: scripts/translate.py
-    description: Ro-Translation safetensors, 70M params, BLEU 33.8 WMT16, VRAM 1GB.
-      Smallest RO-specific, low VRAM. Basic quality.
-    languages:
-    - 'ro'
-    huggingface_download: true
-    model_class: MarianMTModel
-    tokenizer_class: MarianTokenizer
-  madlad400:
-    name: madlad400
-    repo: google/madlad400-3b-mt
-    http_link: https://huggingface.co/google/madlad400-3b-mt
-    file: null
-    size: ~6GB
-    destination: models/madlad400
-    script: scripts/translate.py
-    description: Translations safetensors, 3B params, BLEU ~35.11, Flores 38.4, VRAM
-      4GB. Uncensored, safetensors, 400+ languages. Requires trust_remote_code, lower
-      quality for some languages.
-    languages:
-    - 'ro'
-    - 'es'
-    - 'fr'
-    - 'de'
-    - 'it'
-    - 'pt'
-    - 'ru'
-    - 'tr'
-    - 'cs'
-    - 'pl'
-    - 'uk'
-    - 'bg'
-    - 'zh'
-    - 'ja'
-    - 'ko'
-    - 'vi'
-    - 'th'
-    - 'id'
-    - 'ar'
-    - 'he'
-    - 'fa'
-    - 'hi'
-    - 'bn'
-    - 'nl'
-    - 'sv'
-    - 'no'
-    - 'da'
-    - 'fi'
-    - 'el'
-    - 'hu'
-    huggingface_download: true
-  mbartRo:
-    name: mbartRo
-    params: 0.6B
-    format: safetensors
-    languages_supported: 1
-    repo: facebook/mbart-large-en-ro
-    http_link: https://huggingface.co/facebook/mbart-large-en-ro
-    file: null
-    size: ~2GB
-    destination: models/mbartRo
-    script: scripts/translate.py
-    description: Ro-Translation safetensors, 0.6B params, BLEU 38.0 WMT16, VRAM 2GB.
-      Largest RO-specific, good context. Smaller than multilinguals.
-    languages:
-    - 'ro'
-    huggingface_download: true
-  nllb200:
-    name: nllb200
-    params: 0.6B
-    format: safetensors
-    languages_supported: 200
-    repo: facebook/nllb-200-distilled-600M
-    http_link: https://huggingface.co/facebook/nllb-200-distilled-600M
-    file: null
-    size: ~1.2GB
-    destination: models/nllb200
-    script: scripts/translate.py
-    description: Multilingual seq2seq, 600M params distilled, Flores 44 en→ro, VRAM
-      1.5GB. Meta NLLB-200, 200 languages, better than mBART/M2M-100. No context window.
-    languages:
-    - 'ro'
-    - 'es'
-    - 'fr'
-    - 'de'
-    - 'it'
-    - 'pt'
-    - 'ru'
-    - 'tr'
-    - 'cs'
-    - 'pl'
-    - 'uk'
-    - 'bg'
-    - 'zh'
-    - 'ja'
-    - 'ko'
-    - 'vi'
-    - 'th'
-    - 'id'
-    - 'ar'
-    - 'he'
-    - 'fa'
-    - 'hi'
-    - 'bn'
-    - 'nl'
-    - 'sv'
-    - 'no'
-    - 'da'
-    - 'fi'
-    - 'el'
-    - 'hu'
-    huggingface_download: true
-  ayaExpanse8b:
-    name: ayaExpanse8b
-    languages_supported: 23
-    params: 8B
-    format: GGUF
-    repo: bartowski/aya-expanse-8b-GGUF
-    http_link: https://huggingface.co/bartowski/aya-expanse-8b-GGUF
-    files:
-      Q4_K_M: aya-expanse-8b-Q4_K_M.gguf
-      Q5_K_M: aya-expanse-8b-Q5_K_M.gguf
-    size_Q4_K_M: 5.06GB
-    size_Q5_K_M: 5.80GB
-    destination: models/ayaExpanse8b
-    script: scripts/translate.py
-    description: Multilingual GGUF, 8B params, successor to Aya-23, VRAM 5-6GB. Better
-      quality than Aya-23 across all 23 languages. low+ tier.
-    min_tier: low
-    languages:
-    - 'ro'
-    - 'es'
-    - 'fr'
-    - 'de'
-    - 'it'
-    - 'pt'
-    - 'ru'
-    - 'tr'
-    - 'cs'
-    - 'pl'
-    - 'uk'
-    - 'bg'
-    - 'zh'
-    - 'ja'
-    - 'ko'
-    - 'vi'
-    - 'th'
-    - 'id'
-    - 'ar'
-    - 'he'
-    - 'hi'
-    - 'nl'
-    - 'fi'
   euroLLM9b:
     name: euroLLM9b
     languages_supported: 35
@@ -334,37 +134,23 @@ available_models:
     - 'fi'
     - 'el'
     - 'hu'
-  opusTCBig:
-    name: opusTCBig
-    params: 0.2B
-    format: safetensors
-    languages_supported: 1
-    repo: Helsinki-NLP/opus-mt-tc-big-en-ro
-    http_link: https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-ro
-    file: null
-    size: ~1GB
-    destination: models/opusTCBig
+  ayaExpanse8b:
+    name: ayaExpanse8b
+    languages_supported: 23
+    params: 8B
+    format: GGUF
+    repo: bartowski/aya-expanse-8b-GGUF
+    http_link: https://huggingface.co/bartowski/aya-expanse-8b-GGUF
+    files:
+      Q4_K_M: aya-expanse-8b-Q4_K_M.gguf
+      Q5_K_M: aya-expanse-8b-Q5_K_M.gguf
+    size_Q4_K_M: 5.06GB
+    size_Q5_K_M: 5.80GB
+    destination: models/ayaExpanse8b
     script: scripts/translate.py
-    description: Large OPUS safetensors, 200M params, Tatoeba 48.6, Flores 40.4, VRAM
-      1GB. Better quality than helsinkiRo at 3x the weight.
-    languages:
-    - 'ro'
-    huggingface_download: true
-    model_class: MarianMTModel
-    tokenizer_class: MarianTokenizer
-  nllb1300:
-    name: nllb1300
-    params: 1.3B
-    format: safetensors
-    languages_supported: 200
-    repo: facebook/nllb-200-distilled-1.3B
-    http_link: https://huggingface.co/facebook/nllb-200-distilled-1.3B
-    file: null
-    size: ~2.5GB
-    destination: models/nllb1300
-    script: scripts/translate.py
-    description: Multilingual seq2seq, 1.3B params distilled, higher Flores than nllb200,
-      VRAM 2.5GB. Same architecture as nllb200, 2x params.
+    description: Multilingual GGUF, 8B params, successor to Aya-23, VRAM 5-6GB. Better
+      quality than Aya-23 across all 23 languages. low+ tier.
+    min_tier: low
     languages:
     - 'ro'
     - 'es'
@@ -386,17 +172,9 @@ available_models:
     - 'id'
     - 'ar'
     - 'he'
-    - 'fa'
     - 'hi'
-    - 'bn'
     - 'nl'
-    - 'sv'
-    - 'no'
-    - 'da'
     - 'fi'
-    - 'el'
-    - 'hu'
-    huggingface_download: true
   seamlessm96:
     name: seamless96
     params: 2.3B
@@ -443,3 +221,225 @@ available_models:
     - 'hu'
     huggingface_download: true
     requires_tiktoken: true
+  aya23:
+    name: aya23
+    languages_supported: 23
+    params: 8B
+    format: GGUF
+    repo: bartowski/aya-23-8B-GGUF
+    http_link: https://huggingface.co/bartowski/aya-23-8B-GGUF
+    file: aya-23-8B-Q4_K_M.gguf
+    size: 4.8GB
+    destination: models/aya23/aya-23-8B-Q4_K_M.gguf
+    script: scripts/translate.py
+    description: Multilingual LLM GGUF, 8B params, Flores 34.8, VRAM 5.8GB. Uncensored,
+      GGUF, 23 languages. Slower, larger VRAM.
+    languages:
+    - 'ro'
+    - 'es'
+    - 'fr'
+    - 'de'
+    - 'it'
+    - 'pt'
+    - 'ru'
+    - 'tr'
+    - 'cs'
+    - 'pl'
+    - 'uk'
+    - 'bg'
+    - 'zh'
+    - 'ja'
+    - 'ko'
+    - 'vi'
+    - 'th'
+    - 'id'
+    - 'ar'
+    - 'he'
+    - 'hi'
+    - 'nl'
+    - 'fi'
+  madlad400:
+    name: madlad400
+    repo: google/madlad400-3b-mt
+    http_link: https://huggingface.co/google/madlad400-3b-mt
+    file: null
+    size: ~6GB
+    destination: models/madlad400
+    script: scripts/translate.py
+    description: Translations safetensors, 3B params, BLEU ~35.11, Flores 38.4, VRAM
+      4GB. Uncensored, safetensors, 400+ languages. Requires trust_remote_code, lower
+      quality for some languages.
+    languages:
+    - 'ro'
+    - 'es'
+    - 'fr'
+    - 'de'
+    - 'it'
+    - 'pt'
+    - 'ru'
+    - 'tr'
+    - 'cs'
+    - 'pl'
+    - 'uk'
+    - 'bg'
+    - 'zh'
+    - 'ja'
+    - 'ko'
+    - 'vi'
+    - 'th'
+    - 'id'
+    - 'ar'
+    - 'he'
+    - 'fa'
+    - 'hi'
+    - 'bn'
+    - 'nl'
+    - 'sv'
+    - 'no'
+    - 'da'
+    - 'fi'
+    - 'el'
+    - 'hu'
+    huggingface_download: true
+  nllb1300:
+    name: nllb1300
+    params: 1.3B
+    format: safetensors
+    languages_supported: 200
+    repo: facebook/nllb-200-distilled-1.3B
+    http_link: https://huggingface.co/facebook/nllb-200-distilled-1.3B
+    file: null
+    size: ~2.5GB
+    destination: models/nllb1300
+    script: scripts/translate.py
+    description: Multilingual seq2seq, 1.3B params distilled, higher Flores than nllb200,
+      VRAM 2.5GB. Same architecture as nllb200, 2x params.
+    languages:
+    - 'ro'
+    - 'es'
+    - 'fr'
+    - 'de'
+    - 'it'
+    - 'pt'
+    - 'ru'
+    - 'tr'
+    - 'cs'
+    - 'pl'
+    - 'uk'
+    - 'bg'
+    - 'zh'
+    - 'ja'
+    - 'ko'
+    - 'vi'
+    - 'th'
+    - 'id'
+    - 'ar'
+    - 'he'
+    - 'fa'
+    - 'hi'
+    - 'bn'
+    - 'nl'
+    - 'sv'
+    - 'no'
+    - 'da'
+    - 'fi'
+    - 'el'
+    - 'hu'
+    huggingface_download: true
+  nllb200:
+    name: nllb200
+    params: 0.6B
+    format: safetensors
+    languages_supported: 200
+    repo: facebook/nllb-200-distilled-600M
+    http_link: https://huggingface.co/facebook/nllb-200-distilled-600M
+    file: null
+    size: ~1.2GB
+    destination: models/nllb200
+    script: scripts/translate.py
+    description: Multilingual seq2seq, 600M params distilled, Flores 44 en→ro, VRAM
+      1.5GB. Meta NLLB-200, 200 languages, better than mBART/M2M-100. No context window.
+    languages:
+    - 'ro'
+    - 'es'
+    - 'fr'
+    - 'de'
+    - 'it'
+    - 'pt'
+    - 'ru'
+    - 'tr'
+    - 'cs'
+    - 'pl'
+    - 'uk'
+    - 'bg'
+    - 'zh'
+    - 'ja'
+    - 'ko'
+    - 'vi'
+    - 'th'
+    - 'id'
+    - 'ar'
+    - 'he'
+    - 'fa'
+    - 'hi'
+    - 'bn'
+    - 'nl'
+    - 'sv'
+    - 'no'
+    - 'da'
+    - 'fi'
+    - 'el'
+    - 'hu'
+    huggingface_download: true
+  opusTCBig:
+    name: opusTCBig
+    params: 0.2B
+    format: safetensors
+    languages_supported: 1
+    repo: Helsinki-NLP/opus-mt-tc-big-en-ro
+    http_link: https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-ro
+    file: null
+    size: ~1GB
+    destination: models/opusTCBig
+    script: scripts/translate.py
+    description: Large OPUS safetensors, 200M params, Tatoeba 48.6, Flores 40.4, VRAM
+      1GB. Better quality than helsinkiRo at 3x the weight.
+    languages:
+    - 'ro'
+    huggingface_download: true
+    model_class: MarianMTModel
+    tokenizer_class: MarianTokenizer
+  helsinkiRo:
+    name: helsinkiRo
+    params: 0.07B
+    format: safetensors
+    languages_supported: 1
+    repo: Helsinki-NLP/opus-mt-en-ro
+    http_link: https://huggingface.co/Helsinki-NLP/opus-mt-en-ro
+    file: null
+    size: ~0.3GB
+    destination: models/helsinkiRo
+    script: scripts/translate.py
+    description: Ro-Translation safetensors, 70M params, BLEU 33.8 WMT16, VRAM 1GB.
+      Smallest RO-specific, low VRAM. Basic quality.
+    languages:
+    - 'ro'
+    huggingface_download: true
+    model_class: MarianMTModel
+    tokenizer_class: MarianTokenizer
+  mbartRo:
+    name: mbartRo
+    params: 0.6B
+    format: safetensors
+    languages_supported: 1
+    repo: facebook/mbart-large-en-ro
+    http_link: https://huggingface.co/facebook/mbart-large-en-ro
+    file: null
+    size: ~2GB
+    destination: models/mbartRo
+    script: scripts/translate.py
+    description: Ro-Translation safetensors, 0.6B params, BLEU 38.0 WMT16, VRAM 2GB.
+      Largest RO-specific, good context. Smaller than multilinguals.
+    languages:
+    - 'ro'
+    huggingface_download: true

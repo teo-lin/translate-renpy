@@ -683,19 +683,29 @@ def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path
 
     records.sort(key=lambda r: r['avg_score'], reverse=True)
 
+    table_lines = []
     if use_comet:
-        print(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'COMET':>7}  {'Score':>7}  {'Name'}")
-        print("-" * 60)
+        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'COMET':>7}  {'Score':>7}  {'Name'}")
+        table_lines.append("-" * 60)
         for r in records:
             comet_str = f"{r['avg_comet']:>7.4f}" if 'avg_comet' in r else f"{'N/A':>7}"
-            print(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {comet_str}  {r['avg_score']:>7.4f}  {r['name']}")
+            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {comet_str}  {r['avg_score']:>7.4f}  {r['name']}")
     else:
-        print(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'Score':>7}  {'Name'}")
-        print("-" * 50)
+        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'Score':>7}  {'Name'}")
+        table_lines.append("-" * 50)
         for r in records:
-            print(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {r['avg_score']:>7.4f}  {r['name']}")
+            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {r['avg_score']:>7.4f}  {r['name']}")
 
+    for line in table_lines:
+        print(line)
     print()
+
+    # Save visual table to benchmark_scores.yaml
+    scores_path = project_root / "models" / "benchmark_scores.yaml"
+    with open(scores_path, 'w', encoding='utf-8') as f:
+        f.write('table: |\n')
+        for line in table_lines:
+            f.write('  ' + line + '\n')
 
     # Append all records to benchmarks.yaml
     out_path = project_root / "models" / "benchmarks.yaml"
@@ -709,7 +719,8 @@ def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path
     with open(out_path, 'w', encoding='utf-8') as f:
         yaml.dump(existing, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
-    print(f"Results saved to: {out_path}")
+    print(f"Results saved to:      {out_path}")
+    print(f"Scores table saved to: {scores_path}")
 
 
 def _auto_detect_glossary(data_path: Path) -> Path:
