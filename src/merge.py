@@ -395,8 +395,11 @@ def merge_single_file(
 
 
 def find_parsed_yaml_files(tl_path: Path) -> List[Path]:
-    """Find all .parsed.yaml files"""
-    return list(tl_path.rglob("*.parsed.yaml"))
+    """Find source .parsed.yaml files, excluding re-extracted *.translated.parsed.yaml."""
+    return [
+        f for f in tl_path.rglob("*.parsed.yaml")
+        if '.translated.' not in f.name
+    ]
 
 
 def main():

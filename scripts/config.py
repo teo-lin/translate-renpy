@@ -195,8 +195,8 @@ def discover_characters(tl_path: Path) -> Dict[str, Dict[str, str]]:
     character_vars = {}
     character_files = {}  # Track which files each character appears in
 
-    # Find all .rpy files
-    rpy_files = list(tl_path.rglob("*.rpy"))
+    # Find source .rpy files, excluding generated merge outputs (*.translated.rpy)
+    rpy_files = [f for f in tl_path.rglob("*.rpy") if '.translated.' not in f.name]
 
     for rpy_file in rpy_files:
         try:
@@ -391,9 +391,6 @@ def main():
     parser.add_argument('--model', type=str, default='', help='Model key')
 
     args = parser.parse_args()
-
-    # Set HuggingFace home to local models directory
-    os.environ['HF_HOME'] = str(get_project_root() / "models")
 
     show_banner()
 

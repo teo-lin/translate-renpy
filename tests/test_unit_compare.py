@@ -108,13 +108,13 @@ def test_benchmark_translator_translates_all_blocks():
         assert stats['translated'] == 3, f"Expected 3 translated, got {stats['translated']}"
         assert stats['failed'] == 0, f"Expected 0 failed, got {stats['failed']}"
 
-        print(f"  ✓ Translated {stats['translated']}/{stats['total']} blocks")
+        print(f"  [OK] Translated {stats['translated']}/{stats['total']} blocks")
 
         # Verify mock translator was called 3 times (not just for empty translations)
         assert len(mock_translator.translations_called) == 3, \
             f"Expected 3 translation calls, got {len(mock_translator.translations_called)}"
 
-        print(f"  ✓ Mock translator called {len(mock_translator.translations_called)} times")
+        print(f"  [OK] Mock translator called {len(mock_translator.translations_called)} times")
 
         # Load result and check
         with open(parsed_yaml, 'r', encoding='utf-8') as f:
@@ -126,7 +126,7 @@ def test_benchmark_translator_translates_all_blocks():
             assert result[block_id]['ay'].startswith('[TestModel]'), \
                 f"Block {block_id} has incorrect translation: {result[block_id]['ay']}"
 
-        print(f"  ✓ All blocks have 'ay' key with translations")
+        print(f"  [OK] All blocks have 'ay' key with translations")
 
 
 
@@ -193,7 +193,7 @@ def test_numbered_key_storage():
             assert result['dialogue-1-Test'][key].startswith(f'[Model{key}]'), \
                 f"Incorrect translation for key '{key}'"
 
-            print(f"  ✓ Key '{key}' correctly stored with translation")
+            print(f"  [OK] Key '{key}' correctly stored with translation")
 
     print("\n  [PASS] All two-letter keys work correctly!")
 
@@ -260,7 +260,7 @@ def test_context_extraction():
         assert 'Line 2' in context[1], "Missing Line 2 in context"
         assert 'Line 4' in context[2], "Missing Line 4 in context"
 
-        print(f"  ✓ Context correctly extracted: {len(context)} lines")
+        print(f"  [OK] Context correctly extracted: {len(context)} lines")
         print(f"    Before: {context[:2]}")
         print(f"    After:  {context[2:]}")
 

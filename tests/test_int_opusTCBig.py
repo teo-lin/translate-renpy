@@ -13,18 +13,22 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from tests.utils import TranslateBatchTestMixin
 
-_MODEL_PATH = PROJECT_ROOT / "models" / "opusTCBig"
-_SKIP_REASON = "opusTCBig model not downloaded (run 0-setup.ps1)"
+from hardware import is_model_available, resolve_model_path
+
+_KEY = "opusTCBig"
+_AVAILABLE = is_model_available(_KEY)
+_MODEL_REF = resolve_model_path(_KEY) if _AVAILABLE else None
+_SKIP_REASON = "opusTCBig model not in HF cache (run 0-setup.ps1)"
 
 
-@unittest.skipIf(not _MODEL_PATH.exists() or not any(_MODEL_PATH.iterdir()), _SKIP_REASON)
+@unittest.skipIf(not _AVAILABLE, _SKIP_REASON)
 class TestOpusTCBigIntegration(TranslateBatchTestMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from translators.helsinkyRo_translator import QuickMTTranslator
-        print(f"\nIntegration test: loading opusTCBig from {_MODEL_PATH}")
+        print(f"\nIntegration test: loading opusTCBig from {_MODEL_REF}")
         cls.translator = QuickMTTranslator(
-            model_path=str(_MODEL_PATH),
+            model_path=_MODEL_REF,
             target_language="Romanian",
             lang_code="ro",
         )
@@ -70,7 +74,7 @@ class TestOpusTCBigIntegration(TranslateBatchTestMixin, unittest.TestCase):
     def test_translate_with_glossary(self):
         from translators.helsinkyRo_translator import QuickMTTranslator
         t = QuickMTTranslator(
-            model_path=str(_MODEL_PATH),
+            model_path=_MODEL_REF,
             target_language="Romanian",
             lang_code="ro",
             glossary={"protagonist": "protagonist"},

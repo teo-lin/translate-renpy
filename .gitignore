@@ -44,11 +44,8 @@ renpy/*
 !renpy/unRen/
 !renpy/unRen/**
 
-# Models (large files)
+# Models - config only (actual model files are in HuggingFace cache)
 models/*
-*.gguf
-*.bin
-*.safetensors
 !models/*.md
 !models/models_config.yaml
 !models/current_config.yaml

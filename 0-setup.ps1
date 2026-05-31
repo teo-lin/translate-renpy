@@ -3,6 +3,31 @@
 
 $ErrorActionPreference = "Stop"
 
+# Check Windows Developer Mode (required for HuggingFace hub symlinks)
+$devModeKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+$devModeEnabled = $false
+try {
+    $regValue = Get-ItemProperty -Path $devModeKey -Name "AllowDevelopmentWithoutDevLicense" -ErrorAction SilentlyContinue
+    $devModeEnabled = $regValue.AllowDevelopmentWithoutDevLicense -eq 1
+}
+catch {
+    # Registry key doesn't exist - Dev Mode not enabled
+}
+
+if (-not $devModeEnabled) {
+    Write-Host ""
+    Write-Host "WARNING: Windows Developer Mode is not enabled." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "HuggingFace hub stores models in %USERPROFILE%\.cache\huggingface\hub\" -ForegroundColor Gray
+    Write-Host "and uses symlinks to save disk space." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Without Developer Mode enabled, HuggingFace will copy files instead," -ForegroundColor Yellow
+    Write-Host "using ~2x disk space per model." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Enable Developer Mode: Settings > System > For developers > toggle ON" -ForegroundColor Cyan
+    Write-Host ""
+}
+
 # Get the directory of the current script to ensure paths are correct
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 

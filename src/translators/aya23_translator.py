@@ -3,12 +3,17 @@ Aya-23-8B translator — thin subclass of LlamaCppTranslator with Aya-23 default
 """
 
 from pathlib import Path
+from huggingface_hub import hf_hub_download
 from translators.llama_cpp_translator import LlamaCppTranslator
 
-_DEFAULT_MODEL_PATH = (
-    Path(__file__).parent.parent.parent
-    / "models" / "aya23" / "aya-23-8B-Q4_K_M.gguf"
-)
+
+def _get_default_model_path():
+    """Download Aya-23-8B from HF cache and return local blob path."""
+    return hf_hub_download(
+        repo_id="bartowski/aya-23-8B-GGUF",
+        filename="aya-23-8B-Q4_K_M.gguf",
+        local_files_only=False
+    )
 
 
 class Aya23Translator(LlamaCppTranslator):
@@ -24,8 +29,10 @@ class Aya23Translator(LlamaCppTranslator):
         prompt_template: str = None,
         glossary: dict = None,
     ):
+        if model_path is None:
+            model_path = _get_default_model_path()
         super().__init__(
-            model_path=str(model_path or _DEFAULT_MODEL_PATH),
+            model_path=str(model_path),
             target_language=target_language,
             n_gpu_layers=n_gpu_layers,
             n_ctx=n_ctx,

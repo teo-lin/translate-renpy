@@ -13,23 +13,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
-# Discover the first available GGUF model in models/ for smoke-testing
-_CANDIDATE_MODELS = [
-    ("aya23",        "models/aya23/aya-23-8B-Q4_K_M.gguf"),
-    ("ayaExpanse8b", "models/ayaExpanse8b/aya-expanse-8b-Q4_K_M.gguf"),
-    ("ayaExpanse8b", "models/ayaExpanse8b/aya-expanse-8b-Q5_K_M.gguf"),
-    ("euroLLM9b",    "models/euroLLM9b/EuroLLM-9B-Instruct.Q4_K_M.gguf"),
-    ("euroLLM9b",    "models/euroLLM9b/EuroLLM-9B-Instruct.Q5_K_M.gguf"),
-    ("euroLLM22b",   "models/euroLLM22b/utter-project_EuroLLM-22B-Instruct-2512-Q4_K_M.gguf"),
-]
+# Discover the first available GGUF model in the HF cache for smoke-testing
+from hardware import is_model_available, resolve_model_path
+
+_CANDIDATE_KEYS = ["aya23", "ayaExpanse8b", "euroLLM9b", "euroLLM22b"]
 
 
 def _find_model():
-    """Return (model_key, absolute_path) for the first installed GGUF, or (None, None)."""
-    for key, rel_path in _CANDIDATE_MODELS:
-        full = PROJECT_ROOT / rel_path
-        if full.exists():
-            return key, full
+    """Return (model_key, model_ref) for the first cached GGUF, or (None, None)."""
+    for key in _CANDIDATE_KEYS:
+        if is_model_available(key):
+            return key, resolve_model_path(key)
     return None, None
 
 
@@ -105,10 +99,12 @@ class TestLlamaCppTranslatorIntegration(unittest.TestCase):
     def test_translate_with_glossary(self):
         from translators.llama_cpp_translator import LlamaCppTranslator
 
+        # Load this second instance on CPU (n_gpu_layers=0): the class already
+        # holds a full GPU copy, and two ~5GB GGUF models won't fit in 8GB VRAM.
         t = LlamaCppTranslator(
             model_path=str(_MODEL_PATH),
             target_language="Romanian",
-            n_gpu_layers=-1,
+            n_gpu_layers=0,
             n_ctx=8192,
             n_batch=128,
             glossary={"protagonist": "protagonist"},
@@ -118,18 +114,13 @@ class TestLlamaCppTranslatorIntegration(unittest.TestCase):
         del t
 
 
-@unittest.skipIf(
-    not (PROJECT_ROOT / "models/ayaExpanse8b").exists() or
-    not any((PROJECT_ROOT / "models/ayaExpanse8b").glob("*.gguf")),
-    "ayaExpanse8b model not downloaded"
-)
+@unittest.skipIf(not is_model_available("ayaExpanse8b"), "ayaExpanse8b model not in HF cache")
 class TestAyaExpanse8bIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from translators.llama_cpp_translator import LlamaCppTranslator
-        gguf_files = list((PROJECT_ROOT / "models/ayaExpanse8b").glob("*.gguf"))
         cls.translator = LlamaCppTranslator(
-            model_path=str(gguf_files[0]),
+            model_path=resolve_model_path("ayaExpanse8b"),
             target_language="Romanian",
             n_gpu_layers=-1,
             n_ctx=8192,
@@ -157,18 +148,13 @@ class TestAyaExpanse8bIntegration(unittest.TestCase):
         self.assertEqual(self.translator.target_language, "Romanian")
 
 
-@unittest.skipIf(
-    not (PROJECT_ROOT / "models/euroLLM9b").exists() or
-    not any((PROJECT_ROOT / "models/euroLLM9b").glob("*.gguf")),
-    "euroLLM9b model not downloaded"
-)
+@unittest.skipIf(not is_model_available("euroLLM9b"), "euroLLM9b model not in HF cache")
 class TestEuroLLM9bIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from translators.llama_cpp_translator import LlamaCppTranslator
-        gguf_files = list((PROJECT_ROOT / "models/euroLLM9b").glob("*.gguf"))
         cls.translator = LlamaCppTranslator(
-            model_path=str(gguf_files[0]),
+            model_path=resolve_model_path("euroLLM9b"),
             target_language="Romanian",
             n_gpu_layers=-1,
             n_ctx=4096,
@@ -205,13 +191,12 @@ class TestAya23TranslatorIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        aya23_path = PROJECT_ROOT / "models/aya23/aya-23-8B-Q4_K_M.gguf"
-        if not aya23_path.exists():
-            raise unittest.SkipTest("aya23 model not found; skipping aya23-specific test")
+        if not is_model_available("aya23"):
+            raise unittest.SkipTest("aya23 model not in HF cache; skipping aya23-specific test")
 
         from translators.aya23_translator import Aya23Translator
 
-        print(f"\nIntegration test: loading Aya23Translator from {aya23_path}")
+        print("\nIntegration test: loading Aya23Translator (aya23) from HF cache")
         cls.translator = Aya23Translator(
             n_ctx=8192,
             n_batch=128,

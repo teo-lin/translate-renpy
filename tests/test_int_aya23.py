@@ -24,26 +24,25 @@ from tests.utils import BaseTranslatorIntegrationTest
 from aya23_translator import Aya23Translator
 
 
-# Test configuration
-MODEL_SUBDIR = "aya23"
-MODEL_FILENAME = "aya-23-8B-Q4_K_M.gguf"
+# Resolve the model from the HF cache
+from hardware import is_model_available, resolve_model_path
+
+_KEY = "aya23"
+_AVAILABLE = is_model_available(_KEY)
 
 
 class TestAya23Integration(BaseTranslatorIntegrationTest):
-    # Use the helper method from the base class to construct the model path
-    model_path = BaseTranslatorIntegrationTest.project_root / "models" / MODEL_SUBDIR / MODEL_FILENAME
-
     @classmethod
     def setUpClass(cls):
         """Set up the translator instance once for all tests in this class."""
         super().setUpClass()  # Call base class setup
 
-        if not cls.model_path.exists():
-            raise unittest.SkipTest(f"Aya-23 model not found at {cls.model_path}")
+        if not _AVAILABLE:
+            raise unittest.SkipTest("Aya-23 model not in HF cache (run 0-setup.ps1)")
 
         print("Setting up Aya23Translator for integration test...")
         cls.translator = Aya23Translator(
-            model_path=str(cls.model_path),
+            model_path=resolve_model_path(_KEY),
             target_language='Romanian',
             n_gpu_layers=0  # Use CPU for this simple test to avoid GPU memory issues
         )

@@ -10,7 +10,7 @@ from pathlib import Path
 from contextlib import contextmanager
 from translators.translator_utils import (
     probe_device, safe_generate, apply_glossary, apply_source_conditioned, back_map_for,
-    apply_ro_subjunctive,
+    apply_ro_subjunctive, from_pretrained_cached,
 )
 
 # Suppress known non-critical warnings for this module
@@ -86,7 +86,7 @@ class SeamlessM4Tv2Translator:
         'en': 'eng',  # English (source)
     }
 
-    def __init__(self, target_language: str = "Romanian", lang_code: str = None,
+    def __init__(self, model_path: str = None, target_language: str = "Romanian", lang_code: str = None,
                  device: str = None, glossary: dict = None, model_name: str = None):
         """
         Initialize SeamlessM4T-v2 translator
@@ -138,12 +138,11 @@ class SeamlessM4Tv2Translator:
             device = probe_device()
         self.device = device
 
-        # Use local model path
-        project_root = Path(__file__).parent.parent.parent
-        if model_name is None:
-            model_path = project_root / "models" / "seamless96"
-        else:
-            model_path = Path(model_name)
+        if model_path is None:
+            if model_name is None:
+                model_path = "facebook/seamless-m4t-v2-large"
+            else:
+                model_path = model_name
 
         self.model_name = str(model_path)
 
@@ -153,14 +152,14 @@ class SeamlessM4Tv2Translator:
         print(f"  Model: {model_path}")
         print(f"  Loading model... This may take 60-90 seconds...")
 
-        # Load processor and model from local path
-        self.processor = AutoProcessor.from_pretrained(str(model_path), local_files_only=True)
+        # Load processor and model from HF cache (offline-first, fetch if missing)
+        self.processor = from_pretrained_cached(AutoProcessor, str(model_path))
 
         # Use memory-efficient loading to avoid paging file errors
-        self.model = SeamlessM4Tv2Model.from_pretrained(
+        self.model = from_pretrained_cached(
+            SeamlessM4Tv2Model,
             str(model_path),
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            local_files_only=True
         )
         self.model = self.model.to(device)
 

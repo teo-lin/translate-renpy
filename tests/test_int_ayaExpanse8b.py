@@ -16,19 +16,21 @@ sys.path.insert(0, str(project_root / "src"))
 
 PROJECT_ROOT = project_root
 
-_MODEL_DIR = PROJECT_ROOT / "models" / "ayaExpanse8b"
-_GGUF_FILES = list(_MODEL_DIR.glob("*.gguf")) if _MODEL_DIR.exists() else []
-_MODEL_PATH = _GGUF_FILES[0] if _GGUF_FILES else None
+from hardware import is_model_available, resolve_model_path
+
+_KEY = "ayaExpanse8b"
+_AVAILABLE = is_model_available(_KEY)
+_MODEL_REF = resolve_model_path(_KEY) if _AVAILABLE else None
 
 
-@unittest.skipIf(_MODEL_PATH is None, "ayaExpanse8b model not downloaded — run 0-setup.ps1")
+@unittest.skipIf(not _AVAILABLE, "ayaExpanse8b model not in HF cache (run 0-setup.ps1)")
 class TestAyaExpanse8bIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
         from translators.llama_cpp_translator import LlamaCppTranslator
         cls.translator = LlamaCppTranslator(
-            model_path=str(_MODEL_PATH),
+            model_path=_MODEL_REF,
             target_language="Romanian",
             n_gpu_layers=-1,
             n_ctx=8192,

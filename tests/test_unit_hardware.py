@@ -1,18 +1,28 @@
 """
 Unit tests for src/hardware.py.
 All file I/O is redirected to tmp_path via monkeypatch — no real YAML files needed.
+GGUF resolution calls hf_hub_download, which is mocked so no network/cache is touched.
 """
 
 import sys
 import pytest
 import yaml
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import hardware
-from hardware import _detect_tier, _resolve_model_path
+from hardware import (
+    _detect_tier,
+    _resolve_gguf_path,
+    resolve_model_path,
+    is_model_available,
+)
+
+
+def _fake_hf_download(repo_id, filename, **kwargs):
+    """Stand-in for hf_hub_download: returns a deterministic fake cache path."""
+    return str(Path("/fake/cache") / repo_id.replace("/", "--") / filename)
 
 
 # ── _detect_tier ──────────────────────────────────────────────────────────────
@@ -55,85 +65,75 @@ class TestDetectTier:
         assert _detect_tier({"gpu_primary": {"vram_gb": "8"}}) == "medium"
 
 
-# ── _resolve_model_path ───────────────────────────────────────────────────────
+# ── _resolve_gguf_path ──────────────────────────────────────────────────────────
 
 _MODELS_CONFIG = {
     "available_models": {
         "euroLLM9b": {
-            "destination": "models/euroLLM9b",
+            "repo": "org/EuroLLM-9B-GGUF",
+            "format": "GGUF",
             "files": {
                 "Q4_K_M": "EuroLLM-9B.Q4_K_M.gguf",
                 "Q5_K_M": "EuroLLM-9B.Q5_K_M.gguf",
             },
         },
         "aya23": {
-            "destination": "models/aya23/aya-23-8B-Q4_K_M.gguf",
-        },
-        "single_file_model": {
-            "destination": "models/sfm",
-            "file": "sfm-Q4.gguf",
+            "repo": "org/aya-23-8B-GGUF",
+            "format": "GGUF",
+            "file": "aya-23-8B-Q4_K_M.gguf",
         },
         "no_file_model": {
-            "destination": "models/nfm",
+            "repo": "org/nfm-GGUF",
+            "format": "GGUF",
+        },
+        "no_repo_model": {
+            "format": "GGUF",
+            "file": "x.gguf",
         },
     }
 }
 
 
-class TestResolveModelPath:
-    def test_multi_quant_q4(self):
-        result = _resolve_model_path("euroLLM9b", "Q4_K_M", _MODELS_CONFIG)
-        assert result == str(Path("models/euroLLM9b") / "EuroLLM-9B.Q4_K_M.gguf")
+class TestResolveGgufPath:
+    def test_multi_quant_q4(self, monkeypatch):
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+        result = _resolve_gguf_path("euroLLM9b", "Q4_K_M", _MODELS_CONFIG)
+        assert result.endswith("EuroLLM-9B.Q4_K_M.gguf")
 
-    def test_multi_quant_q5(self):
-        result = _resolve_model_path("euroLLM9b", "Q5_K_M", _MODELS_CONFIG)
-        assert result == str(Path("models/euroLLM9b") / "EuroLLM-9B.Q5_K_M.gguf")
+    def test_multi_quant_q5(self, monkeypatch):
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+        result = _resolve_gguf_path("euroLLM9b", "Q5_K_M", _MODELS_CONFIG)
+        assert result.endswith("EuroLLM-9B.Q5_K_M.gguf")
 
-    def test_multi_quant_missing_quant_returns_none(self):
-        result = _resolve_model_path("euroLLM9b", "Q3_K_M", _MODELS_CONFIG)
-        assert result is None
+    def test_multi_quant_missing_quant_returns_none(self, monkeypatch):
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+        assert _resolve_gguf_path("euroLLM9b", "Q3_K_M", _MODELS_CONFIG) is None
 
-    def test_legacy_gguf_destination(self):
-        result = _resolve_model_path("aya23", "Q4_K_M", _MODELS_CONFIG)
-        assert result == "models/aya23/aya-23-8B-Q4_K_M.gguf"
+    def test_single_file_field(self, monkeypatch):
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+        result = _resolve_gguf_path("aya23", "Q4_K_M", _MODELS_CONFIG)
+        assert result.endswith("aya-23-8B-Q4_K_M.gguf")
 
-    def test_single_file_field_with_slash_destination(self):
-        result = _resolve_model_path("single_file_model", "Q4_K_M", _MODELS_CONFIG)
-        # destination "models/sfm" has "/", so uses Path(destination).parent / filename
-        assert result == str(Path("models") / "sfm-Q4.gguf")
+    def test_no_file_field_returns_none(self, monkeypatch):
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+        assert _resolve_gguf_path("no_file_model", "Q4_K_M", _MODELS_CONFIG) is None
 
-    def test_single_file_field_without_slash_destination(self):
-        config = {
-            "available_models": {
-                "mymodel": {
-                    "destination": "mymodels",
-                    "file": "mymodel.gguf",
-                }
-            }
-        }
-        result = _resolve_model_path("mymodel", "Q4_K_M", config)
-        assert result == str(Path("mymodels") / "mymodel.gguf")
+    def test_no_repo_returns_none(self, monkeypatch):
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+        assert _resolve_gguf_path("no_repo_model", "Q4_K_M", _MODELS_CONFIG) is None
 
-    def test_no_file_field_returns_none(self):
-        result = _resolve_model_path("no_file_model", "Q4_K_M", _MODELS_CONFIG)
-        assert result is None
-
-    def test_unknown_model_key_returns_none(self):
-        result = _resolve_model_path("nonexistent", "Q4_K_M", _MODELS_CONFIG)
-        assert result is None
+    def test_unknown_model_key_returns_none(self, monkeypatch):
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+        assert _resolve_gguf_path("nonexistent", "Q4_K_M", _MODELS_CONFIG) is None
 
     def test_empty_available_models_returns_none(self):
-        result = _resolve_model_path("euroLLM9b", "Q4_K_M", {})
-        assert result is None
+        assert _resolve_gguf_path("euroLLM9b", "Q4_K_M", {}) is None
 
-    def test_empty_files_dict_not_gguf_no_file_returns_none(self):
-        config = {
-            "available_models": {
-                "m": {"destination": "models/m", "files": {}}
-            }
-        }
-        result = _resolve_model_path("m", "Q4_K_M", config)
-        assert result is None
+    def test_download_failure_returns_none(self, monkeypatch):
+        def _boom(*a, **k):
+            raise RuntimeError("network down")
+        monkeypatch.setattr(hardware, "hf_hub_download", _boom)
+        assert _resolve_gguf_path("aya23", "Q4_K_M", _MODELS_CONFIG) is None
 
 
 # ── detect_and_write_profile ──────────────────────────────────────────────────
@@ -158,7 +158,8 @@ _PROFILES_YAML = {
 _MODELS_CONFIG_YAML = {
     "available_models": {
         "euroLLM9b": {
-            "destination": "models/euroLLM9b",
+            "repo": "org/EuroLLM-9B-GGUF",
+            "format": "GGUF",
             "files": {
                 "Q5_K_M": "EuroLLM-9B.Q5_K_M.gguf",
             },
@@ -183,6 +184,8 @@ def _patch_hardware(monkeypatch, sys_f, prof_f, mod_f, out_f):
     monkeypatch.setattr(hardware, "PROFILES_FILE", prof_f)
     monkeypatch.setattr(hardware, "MODELS_CONFIG_FILE", mod_f)
     monkeypatch.setattr(hardware, "PROFILE_OUT", out_f)
+    # GGUF resolution downloads via hf_hub_download — stub it out.
+    monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
 
 
 class TestDetectAndWriteProfile:
@@ -223,6 +226,26 @@ class TestDetectAndWriteProfile:
         assert m["quant"] == "Q5_K_M"
         assert m["n_gpu_layers"] == -1
         assert "EuroLLM-9B.Q5_K_M.gguf" in m["file"]
+
+    def test_hf_model_stores_repo(self, tmp_path, monkeypatch):
+        profiles = {"profiles": {"high": {}}}
+        models = {
+            "available_models": {
+                "nllb200": {
+                    "repo": "facebook/nllb-200-distilled-600M",
+                    "format": "safetensors",
+                    "huggingface_download": True,
+                }
+            }
+        }
+        sys_f, prof_f, mod_f, out_f = _write_fixtures(tmp_path, profiles=profiles, models=models)
+        _patch_hardware(monkeypatch, sys_f, prof_f, mod_f, out_f)
+
+        result = hardware.detect_and_write_profile()
+
+        m = result["models"]["nllb200"]
+        assert m["type"] == "hf"
+        assert m["repo"] == "facebook/nllb-200-distilled-600M"
 
     def test_written_yaml_is_loadable(self, tmp_path, monkeypatch):
         sys_f, prof_f, mod_f, out_f = _write_fixtures(tmp_path)
@@ -267,7 +290,11 @@ class TestDetectAndWriteProfile:
         }
         models = {
             "available_models": {
-                "aya23": {"destination": "models/aya23/aya-23-8B-Q4_K_M.gguf"}
+                "aya23": {
+                    "repo": "org/aya-23-8B-GGUF",
+                    "format": "GGUF",
+                    "file": "aya-23-8B-Q4_K_M.gguf",
+                }
             }
         }
         sys_f, prof_f, mod_f, out_f = _write_fixtures(tmp_path, system=system, profiles=profiles, models=models)
@@ -293,7 +320,8 @@ class TestDetectAndWriteProfile:
         models = {
             "available_models": {
                 "ayaExpanse8b": {
-                    "destination": "models/ayaExpanse8b",
+                    "repo": "org/aya-expanse-8b-GGUF",
+                    "format": "GGUF",
                     "files": {"Q5_K_M": "aya-expanse-8b-Q5_K_M.gguf"},
                 }
             }
@@ -320,7 +348,8 @@ class TestDetectAndWriteProfile:
         models = {
             "available_models": {
                 "euroLLM9b": {
-                    "destination": "models/euroLLM9b",
+                    "repo": "org/EuroLLM-9B-GGUF",
+                    "format": "GGUF",
                     "files": {"Q4_K_M": "EuroLLM-9B.Q4_K_M.gguf"},
                 }
             }
@@ -331,6 +360,92 @@ class TestDetectAndWriteProfile:
         result = hardware.detect_and_write_profile()
 
         assert result["models"]["euroLLM9b"]["quant"] == "Q4_K_M"
+
+
+# ── resolve_model_path (public) ───────────────────────────────────────────────
+
+class TestResolveModelPath:
+    def test_gguf_from_profile(self, tmp_path, monkeypatch):
+        profile = {"models": {"aya23": {"file": "/cache/aya.gguf", "quant": "Q4_K_M"}}}
+        out_f = tmp_path / "compute_profile.yaml"
+        out_f.write_text(yaml.dump(profile), encoding="utf-8")
+        monkeypatch.setattr(hardware, "PROFILE_OUT", out_f)
+
+        assert resolve_model_path("aya23") == "/cache/aya.gguf"
+
+    def test_hf_repo_from_profile(self, tmp_path, monkeypatch):
+        profile = {"models": {"nllb200": {"repo": "facebook/nllb-200-distilled-600M", "type": "hf"}}}
+        out_f = tmp_path / "compute_profile.yaml"
+        out_f.write_text(yaml.dump(profile), encoding="utf-8")
+        monkeypatch.setattr(hardware, "PROFILE_OUT", out_f)
+
+        assert resolve_model_path("nllb200") == "facebook/nllb-200-distilled-600M"
+
+    def test_hf_fallback_to_models_config(self, tmp_path, monkeypatch):
+        # No profile present -> fall back to models_config repo
+        monkeypatch.setattr(hardware, "PROFILE_OUT", tmp_path / "missing.yaml")
+        mod_f = tmp_path / "models_config.yaml"
+        mod_f.write_text(yaml.dump({
+            "available_models": {
+                "nllb200": {"repo": "facebook/nllb-200-distilled-600M", "format": "safetensors"}
+            }
+        }), encoding="utf-8")
+        monkeypatch.setattr(hardware, "MODELS_CONFIG_FILE", mod_f)
+
+        assert resolve_model_path("nllb200") == "facebook/nllb-200-distilled-600M"
+
+    def test_gguf_fallback_downloads(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(hardware, "PROFILE_OUT", tmp_path / "missing.yaml")
+        mod_f = tmp_path / "models_config.yaml"
+        mod_f.write_text(yaml.dump({
+            "available_models": {
+                "aya23": {"repo": "org/aya-23-8B-GGUF", "format": "GGUF",
+                          "file": "aya-23-8B-Q4_K_M.gguf"}
+            }
+        }), encoding="utf-8")
+        monkeypatch.setattr(hardware, "MODELS_CONFIG_FILE", mod_f)
+        monkeypatch.setattr(hardware, "hf_hub_download", _fake_hf_download)
+
+        assert resolve_model_path("aya23").endswith("aya-23-8B-Q4_K_M.gguf")
+
+    def test_unknown_model_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(hardware, "PROFILE_OUT", tmp_path / "missing.yaml")
+        mod_f = tmp_path / "models_config.yaml"
+        mod_f.write_text(yaml.dump({"available_models": {}}), encoding="utf-8")
+        monkeypatch.setattr(hardware, "MODELS_CONFIG_FILE", mod_f)
+
+        with pytest.raises(KeyError):
+            resolve_model_path("nonexistent")
+
+
+# ── is_model_available ────────────────────────────────────────────────────────
+
+class TestIsModelAvailable:
+    def test_gguf_file_present(self, tmp_path, monkeypatch):
+        gguf = tmp_path / "model.gguf"
+        gguf.write_text("x", encoding="utf-8")
+        profile = {"models": {"aya23": {"file": str(gguf)}}}
+        out_f = tmp_path / "compute_profile.yaml"
+        out_f.write_text(yaml.dump(profile), encoding="utf-8")
+        monkeypatch.setattr(hardware, "PROFILE_OUT", out_f)
+
+        assert is_model_available("aya23") is True
+
+    def test_gguf_file_missing(self, tmp_path, monkeypatch):
+        profile = {"models": {"aya23": {"file": str(tmp_path / "nope.gguf")}}}
+        out_f = tmp_path / "compute_profile.yaml"
+        out_f.write_text(yaml.dump(profile), encoding="utf-8")
+        monkeypatch.setattr(hardware, "PROFILE_OUT", out_f)
+
+        assert is_model_available("aya23") is False
+
+    def test_unknown_model_false(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(hardware, "PROFILE_OUT", tmp_path / "missing.yaml")
+        mod_f = tmp_path / "models_config.yaml"
+        mod_f.write_text(yaml.dump({"available_models": {}}), encoding="utf-8")
+        monkeypatch.setattr(hardware, "MODELS_CONFIG_FILE", mod_f)
+
+        assert is_model_available("nonexistent") is False
 
 
 # ── load_profile ──────────────────────────────────────────────────────────────
@@ -374,7 +489,7 @@ class TestLoadProfile:
             "vram_gb": 24,
             "models": {
                 "euroLLM9b": {
-                    "file": "models/euroLLM9b/EuroLLM-9B.Q5_K_M.gguf",
+                    "file": "/cache/EuroLLM-9B.Q5_K_M.gguf",
                     "n_gpu_layers": -1,
                     "n_ctx": 32768,
                     "n_batch": 512,

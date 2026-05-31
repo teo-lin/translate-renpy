@@ -9,7 +9,7 @@ import warnings
 from pathlib import Path
 from translators.translator_utils import (
     probe_device, safe_generate, apply_glossary, apply_source_conditioned, back_map_for,
-    apply_ro_subjunctive,
+    apply_ro_subjunctive, from_pretrained_cached,
 )
 
 # Try to import transformers dependencies
@@ -71,12 +71,13 @@ class MADLAD400Translator:
         'hu': 'hu',  # Hungarian
     }
 
-    def __init__(self, target_language: str = "Romanian", lang_code: str = None,
+    def __init__(self, model_path: str = None, target_language: str = "Romanian", lang_code: str = None,
                  device: str = None, glossary: dict = None, unsloth: bool = False, trust_remote_code: bool = False):
         """
         Initialize MADLAD-400-3B translator
 
         Args:
+            model_path: Path to model or HF repo ID (e.g., "google/madlad400-3b-mt"). If None, uses default.
             target_language: Target language name (e.g., "Romanian", "Spanish", "Japanese")
             lang_code: ISO 639-1 language code (e.g., "ro", "es", "ja"). If None, auto-detected.
             device: Device to use ('cuda' or 'cpu'). If None, auto-detected.
@@ -113,6 +114,9 @@ class MADLAD400Translator:
             device = probe_device()
         self.device = device
 
+        if model_path is None:
+            model_path = "google/madlad400-3b-mt"
+
         print(f"Initializing MADLAD-400-3B Translation (EN->{target_language})...")
         print(f"  Language code: {lang_code}")
         print(f"  Device: {device}")
@@ -121,10 +125,6 @@ class MADLAD400Translator:
         # Suppress non-critical warnings
         warnings.filterwarnings("ignore", message=".*device_map.*", category=UserWarning)
         warnings.filterwarnings("ignore", message=".*swigvarlink.*", category=DeprecationWarning)
-
-        # Use local model path
-        project_root = Path(__file__).parent.parent.parent
-        model_path = project_root / "models" / "madlad400"
 
         # Load model and tokenizer
         if unsloth:
@@ -137,16 +137,16 @@ class MADLAD400Translator:
             # Suppress the Mistral regex warning for MADLAD400 tokenizer
             with warnings.catch_warnings():
                 warnings.filterwarnings('ignore', message='.*incorrect regex pattern.*')
-                self.tokenizer = AutoTokenizer.from_pretrained(str(model_path), local_files_only=True)
+                self.tokenizer = from_pretrained_cached(AutoTokenizer, str(model_path))
 
             # NOTE: We avoid device_map="auto" for MADLAD because the large vocabulary (400 languages)
             # causes it to incorrectly offload layers to CPU even when GPU has enough memory
             try:
-                self.model = AutoModelForSeq2SeqLM.from_pretrained(
+                self.model = from_pretrained_cached(
+                    AutoModelForSeq2SeqLM,
                     str(model_path),
                     trust_remote_code=trust_remote_code,
                     torch_dtype=torch.bfloat16,
-                    local_files_only=True
                 )
                 # Manually move to device (more reliable than device_map for this model)
                 self.model = self.model.to(self.device)

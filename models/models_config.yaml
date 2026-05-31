@@ -74,7 +74,6 @@ available_models:
       Q5_K_M: EuroLLM-9B-Instruct.Q5_K_M.gguf
     size_Q4_K_M: 5.58GB
     size_Q5_K_M: 6.52GB
-    destination: models/euroLLM9b
     script: scripts/translate.py
     description: EU-focused GGUF, 9B params, COMET 84.19 en→EU, best for Romanian
       and all EU languages. Outperforms Gemma-2-9B. low+ tier.
@@ -110,7 +109,6 @@ available_models:
       Q4_K_M: utter-project_EuroLLM-22B-Instruct-2512-Q4_K_M.gguf
     size_Q3_K_M: 11.12GB
     size_Q4_K_M: 13.66GB
-    destination: models/euroLLM22b
     script: scripts/translate.py
     description: EU-focused GGUF, 22B params, matches Qwen-3-32B and Gemma-3-27B
       quality. Requires high tier (16GB+ VRAM). Q4_K_M=13.7GB.
@@ -146,7 +144,6 @@ available_models:
       Q5_K_M: aya-expanse-8b-Q5_K_M.gguf
     size_Q4_K_M: 5.06GB
     size_Q5_K_M: 5.80GB
-    destination: models/ayaExpanse8b
     script: scripts/translate.py
     description: Multilingual GGUF, 8B params, successor to Aya-23, VRAM 5-6GB. Better
       quality than Aya-23 across all 23 languages. low+ tier.
@@ -184,7 +181,6 @@ available_models:
     http_link: https://huggingface.co/facebook/seamless-m4t-v2-large
     file: null
     size: ~5GB
-    destination: models/seamless96
     script: scripts/translate.py
     description: Multimodal safetensors, 2.3B params, Flores 38.8, VRAM 5+ GB. Most
       recent from Meta, better than NLLB. Includes unneeded speech features.
@@ -230,7 +226,6 @@ available_models:
     http_link: https://huggingface.co/bartowski/aya-23-8B-GGUF
     file: aya-23-8B-Q4_K_M.gguf
     size: 4.8GB
-    destination: models/aya23/aya-23-8B-Q4_K_M.gguf
     script: scripts/translate.py
     description: Multilingual LLM GGUF, 8B params, Flores 34.8, VRAM 5.8GB. Uncensored,
       GGUF, 23 languages. Slower, larger VRAM.
@@ -264,7 +259,6 @@ available_models:
     http_link: https://huggingface.co/google/madlad400-3b-mt
     file: null
     size: ~6GB
-    destination: models/madlad400
     script: scripts/translate.py
     description: Translations safetensors, 3B params, BLEU ~35.11, Flores 38.4, VRAM
       4GB. Uncensored, safetensors, 400+ languages. Requires trust_remote_code, lower
@@ -310,7 +304,6 @@ available_models:
     http_link: https://huggingface.co/facebook/nllb-200-distilled-1.3B
     file: null
     size: ~2.5GB
-    destination: models/nllb1300
     script: scripts/translate.py
     description: Multilingual seq2seq, 1.3B params distilled, higher Flores than nllb200,
       VRAM 2.5GB. Same architecture as nllb200, 2x params.
@@ -355,7 +348,6 @@ available_models:
     http_link: https://huggingface.co/facebook/nllb-200-distilled-600M
     file: null
     size: ~1.2GB
-    destination: models/nllb200
     script: scripts/translate.py
     description: Multilingual seq2seq, 600M params distilled, Flores 44 en→ro, VRAM
       1.5GB. Meta NLLB-200, 200 languages, better than mBART/M2M-100. No context window.
@@ -400,7 +392,6 @@ available_models:
     http_link: https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-ro
     file: null
     size: ~1GB
-    destination: models/opusTCBig
     script: scripts/translate.py
     description: Large OPUS safetensors, 200M params, Tatoeba 48.6, Flores 40.4, VRAM
       1GB. Better quality than helsinkiRo at 3x the weight.
@@ -418,7 +409,6 @@ available_models:
     http_link: https://huggingface.co/Helsinki-NLP/opus-mt-en-ro
     file: null
     size: ~0.3GB
-    destination: models/helsinkiRo
     script: scripts/translate.py
     description: Ro-Translation safetensors, 70M params, BLEU 33.8 WMT16, VRAM 1GB.
       Smallest RO-specific, low VRAM. Basic quality.
@@ -436,7 +426,6 @@ available_models:
     http_link: https://huggingface.co/facebook/mbart-large-en-ro
     file: null
     size: ~2GB
-    destination: models/mbartRo
     script: scripts/translate.py
     description: Ro-Translation safetensors, 0.6B params, BLEU 38.0 WMT16, VRAM 2GB.
       Largest RO-specific, good context. Smaller than multilinguals.

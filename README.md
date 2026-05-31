@@ -23,6 +23,13 @@ Translate **any Ren'Py visual novel** into **400+ languages** using state-of-the
 - **Git-Friendly** - Track translation changes with clean diffs
 - **Low spec requirements** - NVIDIA GPU with 6GB+ VRAM (CUDA 12.4) - tested with RTX3060 on Windows. Uses all available GPU layers.
 
+## Prerequisites
+
+- **NVIDIA GPU** with 6 GB+ VRAM (CUDA 12.4) - tested on RTX 3060
+- **Windows Developer Mode** - must be enabled for HuggingFace hub symlinks
+  - Without it, model files are duplicated on disk, using ~2x storage
+  - Enable: `Settings > System > For developers > toggle ON`
+
 ## How to use (Setup & Translation Workflows)
 
 ### 0. **Automated Setup**
@@ -32,6 +39,11 @@ First, run setup (once). Check models/SETUP.md for details on what it does and m
 ```powershell
 .\0-setup.ps1 # select desired model(s), language(s) at the prompt
 ```
+
+**Model storage:** Models download to the default HuggingFace cache
+(`%USERPROFILE%\.cache\huggingface\hub\`), not into the project. This way they
+are shared across all projects on your machine and downloaded only once. The
+project's `models/` folder keeps only small YAML config files.
 
 This app supports **three translation workflows**:
 
@@ -210,8 +222,10 @@ Place in `data\<language>_corrections.json`
 │   ├── ro_glossary.json          # Example glossary template
 │   ├── ro_benchmark.json         # Example benchmark data template
 │   └── ro_corrections.json       # Example correction rules
-├── models/                # Downloaded models and configuration
-│   └── current_config.json  # Per-game configuration (NEW)
+├── models/                # Model configs only (models live in the HF cache)
+│   ├── models_config.yaml    # Model registry (repos, languages, sizes)
+│   ├── compute_profiles.yaml # Per-tier hardware params
+│   └── current_config.yaml   # Active game/model/language selection
 ├── tools/                 # External tools (gitignored)
 ├── renpy/                 # Ren'Py SDK (gitignored)
 │   └── tools_config.json  # External tools configuration

@@ -496,11 +496,13 @@ def extract_single_file(
 
 
 def find_rpy_files(tl_path: Path) -> List[Path]:
-    """Find all .rpy files excluding parsed and tags files"""
+    """Find source .rpy files, excluding generated merge outputs (*.translated.rpy)."""
     all_files = list(tl_path.rglob("*.rpy"))
     return [
         f for f in all_files
-        if not f.name.endswith('.parsed.rpy') and not f.name.endswith('.tags.rpy')
+        if '.translated.' not in f.name
+        and not f.name.endswith('.parsed.rpy')
+        and not f.name.endswith('.tags.rpy')
     ]
 
 

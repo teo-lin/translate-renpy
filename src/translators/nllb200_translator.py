@@ -7,7 +7,7 @@ Language codes use NLLB format: ron_Latn, eng_Latn, spa_Latn, etc.
 from pathlib import Path
 from translators.translator_utils import (
     probe_device, safe_generate, apply_glossary, apply_source_conditioned, back_map_for,
-    apply_ro_subjunctive,
+    apply_ro_subjunctive, from_pretrained_cached,
 )
 
 try:
@@ -87,7 +87,7 @@ class NLLB200Translator:
         self.device = device
 
         if model_path is None:
-            model_path = Path(__file__).parent.parent.parent / "models" / "nllb200"
+            model_path = "facebook/nllb-200-distilled-600M"
         self.model_path = str(model_path)
 
         nllb_target = _NLLB_CODES.get(lang_code)
@@ -105,11 +105,13 @@ class NLLB200Translator:
         print(f"  Model path       : {self.model_path}")
         print("  Loading model... This may take 30-60 seconds...")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        self.tokenizer = from_pretrained_cached(
+            AutoTokenizer,
             self.model_path,
             src_lang=self.nllb_src,
         )
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(
+        self.model = from_pretrained_cached(
+            AutoModelForSeq2SeqLM,
             self.model_path,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         )

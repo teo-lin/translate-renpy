@@ -20,6 +20,23 @@ def get_project_root() -> Path:
     return Path(__file__).parent.parent.parent
 
 
+def from_pretrained_cached(loader, model_path, **kwargs):
+    """
+    Load a model / tokenizer / processor offline-first.
+
+    Tries the local HF cache (local_files_only=True) for a fast, network-free
+    load. If a required file is missing from the cache (e.g. a processor's
+    preprocessor_config.json that setup didn't fetch), falls back to an online
+    load that downloads only the missing files. Keeps fully-cached models fast
+    while self-healing partially-cached ones — and avoids the slow per-file HEAD
+    checks that online loading does on every file.
+    """
+    try:
+        return loader.from_pretrained(model_path, local_files_only=True, **kwargs)
+    except Exception:
+        return loader.from_pretrained(model_path, local_files_only=False, **kwargs)
+
+
 def _merge_dicts(base: dict, overlay: dict) -> dict:
     """Merge two dicts. Dicts recurse, lists concatenate (base first), scalars use overlay."""
     merged = dict(base)

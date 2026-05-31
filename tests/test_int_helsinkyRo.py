@@ -25,7 +25,14 @@ from tests.utils import (BaseTranslatorIntegrationTest, TranslateBatchTestMixin,
 # Import the specific translator and its related flags
 from helsinkyRo_translator import QuickMTTranslator, TRANSFORMERS_AVAILABLE, IMPORT_ERROR
 
+from hardware import is_model_available, resolve_model_path
 
+_KEY = "helsinkiRo"
+_AVAILABLE = is_model_available(_KEY)
+_MODEL_REF = resolve_model_path(_KEY) if _AVAILABLE else None
+
+
+@unittest.skipIf(not _AVAILABLE, "helsinkiRo model not in HF cache (run 0-setup.ps1)")
 class TestQuickMTIntegration(TranslateBatchTestMixin, BaseTranslatorIntegrationTest):
 
     @classmethod
@@ -39,7 +46,7 @@ class TestQuickMTIntegration(TranslateBatchTestMixin, BaseTranslatorIntegrationT
             translator_class=QuickMTTranslator,
             translator_name="QuickMTTranslator",
             init_kwargs={
-                'model_path': 'models/helsinkiRo',  # Use default HuggingFace model
+                'model_path': _MODEL_REF,
                 'target_language': 'Romanian',
                 'lang_code': 'ro',
                 'device': get_test_device()

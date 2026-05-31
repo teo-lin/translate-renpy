@@ -540,8 +540,8 @@ class TestRunner:
         """Set up environment variables for test execution."""
         import os
 
-        # Set HuggingFace home to local models directory
-        os.environ['HF_HOME'] = str(self.project_root / "models")
+        # Models live in the default HuggingFace cache (~/.cache/huggingface),
+        # shared across projects — do not redirect HF_HOME into the project.
 
         # Add PyTorch lib directory to PATH for CUDA DLLs
         torch_lib_path = self.project_root / "venv" / "Lib" / "site-packages" / "torch" / "lib"
@@ -627,9 +627,11 @@ class TestRunner:
         """
         installed_models = []
 
+        sys.path.insert(0, str(self.project_root / "src"))
+        from hardware import is_model_available
+
         for model_key, model_config in models_config.get('available_models', {}).items():
-            model_path = self.project_root / model_config['destination']
-            if model_path.exists():
+            if is_model_available(model_key):
                 installed_models.append({
                     'key': model_key,
                     'name': model_config['name'],
@@ -763,12 +765,16 @@ class TestRunner:
                 "--model_key", selected_model['key']
             ])
 
-        # Run test, capture output so we can parse skip/pass counts
+        # Run test, capture output so we can parse skip/pass counts.
+        # Force UTF-8 stdio in the child so prints of Romanian text (ă, ș, ț, ...)
+        # don't crash on Windows' cp1252 console.
+        import os
         import re as _re
+        child_env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
         n_passed = 0
         n_skipped = 0
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=child_env)
             # Print output so user sees test details
             if result.stdout:
                 print(result.stdout, end="")

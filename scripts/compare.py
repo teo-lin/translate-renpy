@@ -360,23 +360,6 @@ def load_resources(project_root: Path, target_lang_code: str):
     return glossary, prompt_template
 
 
-def _resolve_model_file(project_root: Path, model_key: str, model_config: dict) -> Path:
-    """Resolve the actual file path for a model (handles multi-quant GGUF and directory models)."""
-    dest_path = project_root / model_config['destination']
-    if 'files' not in model_config:
-        return dest_path
-    profile_path = project_root / 'models' / 'compute_profile.yaml'
-    if profile_path.exists():
-        with open(profile_path, 'r', encoding='utf-8') as f:
-            profile = yaml.safe_load(f)
-        file_rel = profile.get('models', {}).get(model_key, {}).get('file')
-        if file_rel:
-            return project_root / file_rel
-    files = model_config['files']
-    filename = files.get('Q4_K_M') or files.get('Q3_K_M') or next(iter(files.values()))
-    return dest_path / filename
-
-
 def _load_profile_params(project_root: Path, model_key: str) -> dict:
     """Load llama-cpp inference params from compute_profile.yaml."""
     profile_path = project_root / 'models' / 'compute_profile.yaml'
@@ -521,10 +504,11 @@ def main():
         print(f"ERROR: Model '{args.model}' not found in models_config.yaml")
         sys.exit(1)
 
-    model_path = _resolve_model_file(project_root, args.model, model_config)
-    if not model_path.exists():
-        print(f"ERROR: Model not found: {model_path}")
+    from hardware import resolve_model_path, is_model_available
+    if not is_model_available(args.model):
+        print(f"ERROR: Model '{args.model}' is not downloaded. Run 0-setup.ps1.")
         sys.exit(1)
+    model_path = resolve_model_path(args.model)
 
     # Load resources
     print("\nLoading resources...")
@@ -568,7 +552,7 @@ def main():
     print("  Scanning for Files")
     print("=" * 70)
 
-    parsed_files = list(tl_dir.glob("*.parsed.yaml"))
+    parsed_files = [f for f in tl_dir.glob("*.parsed.yaml") if '.translated.' not in f.name]
 
     if not parsed_files:
         print(f"\nERROR: No .parsed.yaml files found in {tl_dir}")

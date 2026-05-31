@@ -9,7 +9,7 @@ import warnings
 from pathlib import Path
 from translators.translator_utils import (
     probe_device, safe_generate, apply_glossary, apply_source_conditioned, back_map_for,
-    apply_ro_subjunctive,
+    apply_ro_subjunctive, from_pretrained_cached,
 )
 
 # Try to import transformers dependencies
@@ -61,12 +61,8 @@ class QuickMTTranslator:
             device = probe_device()
         self.device = device
 
-        # Use local model path if not provided
-        project_root = Path(__file__).parent.parent.parent
         if model_path is None:
-            model_path = project_root / "models" / "helsinkiRo"
-        else:
-            model_path = Path(model_path)
+            model_path = "Helsinki-NLP/opus-mt-en-ro"
 
         self.model_path = str(model_path)
 
@@ -79,13 +75,14 @@ class QuickMTTranslator:
         # Suppress sacremoses warning (it's optional and not needed for basic translation)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message=".*sacremoses.*")
-            # Load tokenizer and model from local path
-            self.tokenizer = MarianTokenizer.from_pretrained(str(model_path))
+            # Load tokenizer and model from HF cache (offline-first, fetch if missing)
+            self.tokenizer = from_pretrained_cached(MarianTokenizer, str(model_path))
 
         # Use memory-efficient loading
-        self.model = MarianMTModel.from_pretrained(
+        self.model = from_pretrained_cached(
+            MarianMTModel,
             str(model_path),
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         )
         self.model = self.model.to(device)
 

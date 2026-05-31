@@ -128,17 +128,12 @@ def _get_comet_model():
         print("INFO: unbabel-comet not installed — COMET scoring disabled.")
         return None
 
-    # Prefer the project-local HF cache (populated by 0-setup.ps1)
-    project_root = Path(__file__).parent.parent
-    local_hf_home = project_root / "models"
-    local_cache = local_hf_home / "hub" / "models--Unbabel--wmt22-comet-da"
+    # COMET lives in the default HF cache (populated by 0-setup.ps1)
     default_cache = (
         Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))
         / "hub" / "models--Unbabel--wmt22-comet-da"
     )
-    if local_cache.exists():
-        os.environ["HF_HOME"] = str(local_hf_home)
-    elif not default_cache.exists():
+    if not default_cache.exists():
         print("INFO: COMET model not cached — run 0-setup.ps1 to download it.")
         return None
 
@@ -316,22 +311,6 @@ def detect_language_from_filename(filename: str) -> str:
     return 'Romanian'
 
 
-def _resolve_model_file(project_root: Path, model_key: str, model_info: dict) -> Path:
-    dest_path = project_root / model_info['destination']
-    if 'files' not in model_info:
-        return dest_path
-    profile_path = project_root / 'models' / 'compute_profile.yaml'
-    if profile_path.exists():
-        with open(profile_path, 'r', encoding='utf-8') as f:
-            profile = yaml.safe_load(f)
-        file_rel = profile.get('models', {}).get(model_key, {}).get('file')
-        if file_rel:
-            return project_root / file_rel
-    files = model_info['files']
-    filename = files.get('Q4_K_M') or files.get('Q3_K_M') or next(iter(files.values()))
-    return dest_path / filename
-
-
 def _load_profile_params(project_root: Path, model_key: str) -> dict:
     profile_path = project_root / 'models' / 'compute_profile.yaml'
     if profile_path.exists():
@@ -396,6 +375,8 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
         print(f"ERROR: Model '{model_key}' not found in models_config.yaml")
         sys.exit(1)
 
+    from hardware import resolve_model_path
+
     print(f"\nModel: {model_info['name']}")
     print(f"Initializing translator...")
 
@@ -405,30 +386,30 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
     # (none of the translate() methods accept it as a kwarg).
     if model_key == "aya23":
         from translators.aya23_translator import Aya23Translator
-        model_path = project_root / model_info['destination']
+        model_path = resolve_model_path(model_key)
         translator = Aya23Translator(str(model_path), target_language=target_language, glossary=glossary)
     elif model_key in ("helsinkyRo", "helsinkiRo", "opusTCBig"):
         from translators.helsinkyRo_translator import QuickMTTranslator
-        model_path = project_root / model_info['destination']
+        model_path = resolve_model_path(model_key)
         translator = QuickMTTranslator(model_path=str(model_path), target_language=target_language, glossary=glossary)
     elif model_key == "madlad400":
         from translators.madlad400_translator import MADLAD400Translator
         translator = MADLAD400Translator(target_language=target_language, glossary=glossary)
     elif model_key == "mbartRo":
         from translators.mbartRo_translator import MBARTTranslator
-        model_path = project_root / model_info['destination']
+        model_path = resolve_model_path(model_key)
         translator = MBARTTranslator(model_path=str(model_path), target_language=target_language, glossary=glossary)
     elif model_key in ("nllb200", "nllb1300"):
         from translators.nllb200_translator import NLLB200Translator
-        model_path = project_root / model_info['destination']
+        model_path = resolve_model_path(model_key)
         translator = NLLB200Translator(model_path=str(model_path), target_language=target_language, lang_code=lang_code, glossary=glossary)
     elif model_key in ("seamlessm96", "seamless96"):
         from translators.seamless96_translator import SeamlessM4Tv2Translator
-        model_path = project_root / model_info['destination']
+        model_path = resolve_model_path(model_key)
         translator = SeamlessM4Tv2Translator(model_name=str(model_path), target_language=target_language, glossary=glossary)
     elif model_key in ("ayaExpanse8b", "euroLLM9b"):
         from translators.llama_cpp_translator import LlamaCppTranslator
-        model_path = _resolve_model_file(project_root, model_key, model_info)
+        model_path = resolve_model_path(model_key)
         profile_params = _load_profile_params(project_root, model_key)
         translator = LlamaCppTranslator(model_path=str(model_path), target_language=target_language, glossary=glossary, **profile_params)
     else:
@@ -1021,7 +1002,9 @@ def _select_parsed_yaml_interactive(project_root: Path) -> Path:
         _game_name, game_path = select_game()
 
     tl_root = game_path / "game" / "tl"
-    parsed_files = sorted(tl_root.rglob("*.parsed.yaml")) if tl_root.exists() else []
+    parsed_files = sorted(
+        f for f in tl_root.rglob("*.parsed.yaml") if '.translated.' not in f.name
+    ) if tl_root.exists() else []
 
     if not parsed_files:
         print(f"ERROR: No .parsed.yaml files found under {tl_root}")

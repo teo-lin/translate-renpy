@@ -11,6 +11,14 @@ import pytest
 import sys
 from pathlib import Path
 
+# Tests print Romanian content (ă, ș, ț, ...). Force UTF-8 on the output
+# streams so direct `pytest` runs don't crash on Windows' cp1252 console.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 # Add project root to Python path so tests can import modules
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -42,7 +50,7 @@ def mock_models_config():
                 "languages": ["ro", "es", "fr"],
                 "repo": "CohereForAI/aya-23-8B",
                 "file": "model.gguf",
-                "destination": "models/aya23/model.gguf",
+                "format": "GGUF",
                 "huggingface_download": False
             },
             "madlad-400-3b": {
@@ -51,7 +59,6 @@ def mock_models_config():
                 "size": "6.0 GB",
                 "languages": ["ro", "es", "fr", "no"],
                 "repo": "google/madlad400-3b",
-                "destination": "models/madlad400",
                 "huggingface_download": True
             }
         }

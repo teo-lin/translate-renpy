@@ -422,14 +422,18 @@ def main():
         model_path = project_root / model_profile["file"]
 
     elif model_name in _HF_TRANSLATORS:
-        models_config_path = project_root / "models" / "models_config.yaml"
-        with open(models_config_path, 'r', encoding='utf-8') as f:
-            all_models_config = yaml.safe_load(f)['available_models']
-        hf_model_config = all_models_config.get(model_name)
-        if not hf_model_config:
-            print(f"ERROR: Model '{model_name}' not found in models_config.yaml")
-            sys.exit(1)
-        model_path = project_root / hf_model_config['destination']
+        model_profile = compute_profile.get("models", {}).get(model_name)
+        if model_profile and 'repo' in model_profile:
+            model_path = model_profile['repo']
+        else:
+            models_config_path = project_root / "models" / "models_config.yaml"
+            with open(models_config_path, 'r', encoding='utf-8') as f:
+                all_models_config = yaml.safe_load(f)['available_models']
+            hf_model_config = all_models_config.get(model_name)
+            if not hf_model_config:
+                print(f"ERROR: Model '{model_name}' not found in models_config.yaml")
+                sys.exit(1)
+            model_path = hf_model_config['repo']
 
     else:
         print(f"ERROR: Model '{model_name}' is not a recognized LLAMA or HF model.")
@@ -502,7 +506,7 @@ def main():
     print("  Scanning for Files")
     print("=" * 70)
 
-    parsed_files = list(tl_dir.glob("*.parsed.yaml"))
+    parsed_files = [f for f in tl_dir.glob("*.parsed.yaml") if '.translated.' not in f.name]
 
     if not parsed_files:
         print(f"\nERROR: No .parsed.yaml files found in {tl_dir}")

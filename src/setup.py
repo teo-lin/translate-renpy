@@ -115,24 +115,13 @@ class ProjectSetup:
         self._print_footer(all_good)
 
     def _set_hf_home(self):
-        hf_home = ROOT_DIR / "models"
-        os.environ["HF_HOME"] = str(hf_home)
+        # Models live in the default HuggingFace cache (~/.cache/huggingface)
+        # so they are shared across all projects on this machine. We no longer
+        # redirect HF_HOME into the project's models/ folder.
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-        print(f"Hugging Face cache set to: {hf_home}")
-
-        # HF_HOME is redirected to models/, but huggingface-cli login stores
-        # the token at the default cache path. Forward it as HF_TOKEN so the
-        # library sees it and rate-limit warnings disappear.
-        if not os.environ.get("HF_TOKEN"):
-            for candidate in [
-                Path.home() / ".cache" / "huggingface" / "token",
-                Path.home() / ".huggingface" / "token",
-            ]:
-                if candidate.exists():
-                    token = candidate.read_text(encoding="utf-8").strip()
-                    if token:
-                        os.environ["HF_TOKEN"] = token
-                    break
+        from pathlib import Path as _Path
+        default_cache = _Path.home() / ".cache" / "huggingface" / "hub"
+        print(f"Hugging Face cache: {default_cache}")
 
     def _print_header(self):
         print("=" * 70)
@@ -249,7 +238,7 @@ class ProjectSetup:
                 size = model.get(f'size_{quant}') or '?'
                 quant_label = f"{quant} Â· {size}"
             else:
-                filename = model.get('file') or model.get('destination') or ''
+                filename = model.get('file') or ''
                 m = re.search(r'Q\d+_K_[MS]', filename)
                 quant = m.group(0) if m else None
                 size = model.get('size') or '?'
@@ -458,6 +447,9 @@ class ProjectSetup:
 
         print("  Downloading wmt22-comet-da model (~1.6 GB)...")
         py_code = (
+            # Mute torch's harmless "triton not found" flop-counter warning
+            "import logging; "
+            "logging.getLogger('torch.utils.flop_counter').setLevel(logging.ERROR); "
             "from comet import download_model; "
             "path = download_model('Unbabel/wmt22-comet-da'); "
             "print('Model cached at:', path)"
@@ -474,14 +466,12 @@ class ProjectSetup:
         if not self.wants_meteor:
             return
         print("  Downloading NLTK WordNet data for METEOR (~12 MB)...")
+        # NLTK 3.9+ auto-extracts on download. nltk.data.find() searches all
+        # paths in nltk.data.path, so we don't assume any specific location.
         py_code = (
-            "import nltk, zipfile, os; "
+            "import nltk; "
             "nltk.download('wordnet', quiet=True); "
             "nltk.download('omw-1.4', quiet=True); "
-            # Extract any ZIPs that NLTK left unextracted (Windows quirk)
-            "corpora_dir = os.path.join(nltk.data.path[0], 'corpora'); "
-            "[zipfile.ZipFile(os.path.join(corpora_dir, f)).extractall(corpora_dir) "
-            " for f in os.listdir(corpora_dir) if f.endswith('.zip')]; "
             "nltk.data.find('corpora/wordnet'); "
             "print('WordNet ready')"
         )
@@ -603,47 +593,31 @@ class ProjectSetup:
         print()
         for model in self.selected_models:
             model_config = model
-            dest_path = ROOT_DIR / model_config['destination']
-
-            if model_config.get('huggingface_download'):
-                already_done = dest_path.is_dir() and any(
-                    f for f in dest_path.iterdir() if f.suffix in ('.safetensors', '.bin', '.json')
-                )
-            elif dest_path.is_dir():
-                already_done = any(dest_path.glob('*.gguf'))
-            else:
-                already_done = dest_path.exists()
-            if already_done:
-                print(f"    Model '{model['name']}' already downloaded.")
-                continue
+            repo_id = model_config['repo']
 
             print(f"    Downloading {model['name']}...")
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-            repo_id = model_config['repo']
+            # All downloads land in the default HuggingFace cache
+            # (~/.cache/huggingface/hub). HF skips files already cached.
             if model_config.get('huggingface_download'):
+                # Safetensors model: from_pretrained populates the cache.
+                # No save_pretrained — that would create a duplicate copy.
                 model_class = model_config.get('model_class', 'AutoModelForSeq2SeqLM')
                 tokenizer_class = model_config.get('tokenizer_class', 'AutoTokenizer')
                 py_code = (
                     f"from transformers import {model_class}, {tokenizer_class}; "
-                    f"model = {model_class}.from_pretrained('{repo_id}'); "
-                    f"tokenizer = {tokenizer_class}.from_pretrained('{repo_id}'); "
-                    f"model.save_pretrained('{dest_path.as_posix()}'); "
-                    f"tokenizer.save_pretrained('{dest_path.as_posix()}')"
+                    f"{model_class}.from_pretrained('{repo_id}'); "
+                    f"{tokenizer_class}.from_pretrained('{repo_id}')"
                 )
                 subprocess.run([str(self.venv_python), "-c", py_code], check=True)
             else:
+                # GGUF model: download the single .gguf file into the cache.
                 if 'file' in model_config:
                     filename = model_config['file']
-                    hf_hub_download(repo_id=repo_id, filename=filename, local_dir=str(dest_path.parent))
-                    downloaded_file = dest_path.parent / filename
-                    if downloaded_file.exists() and downloaded_file != dest_path:
-                        downloaded_file.rename(dest_path)
                 else:
                     filename = self._pick_quant_for_tier(model_config, tier)
                     print(f"      Quant: {filename} (tier={tier})")
-                    dest_path.mkdir(parents=True, exist_ok=True)
-                    hf_hub_download(repo_id=repo_id, filename=filename, local_dir=str(dest_path))
+                hf_hub_download(repo_id=repo_id, filename=filename)
 
     def _download_tools(self):
         print()
@@ -751,29 +725,39 @@ class ProjectSetup:
         # Check selected models
         if not self.args.skip_model and self.selected_models:
             print("  Checking selected models...")
+            try:
+                from huggingface_hub import try_to_load_from_cache, scan_cache_dir
+                cached_repos = {repo.repo_id for repo in scan_cache_dir().repos}
+            except Exception:
+                try_to_load_from_cache = None
+                cached_repos = set()
+
             for model in self.selected_models:
                 model_config = model
-                dest_path = ROOT_DIR / model_config['destination']
+                repo_id = model_config['repo']
 
-                if dest_path.exists():
-                    if model_config.get('huggingface_download'):
-                        # Directory-based model
-                        if any(dest_path.iterdir()):
-                            print(f"    - {model['name']}: downloaded")
-                        else:
-                            print(f"    - {model['name']}: NOT FOUND")
-                            all_good = False
+                if model_config.get('huggingface_download'):
+                    # Safetensors: repo present in the HF cache
+                    if repo_id in cached_repos:
+                        print(f"    - {model['name']}: downloaded")
                     else:
-                        # GGUF file model (file path or directory with gguf)
-                        if dest_path.is_dir():
-                            gguf_files = list(dest_path.glob('*.gguf'))
-                            size_gb = sum(f.stat().st_size for f in gguf_files) / (1024**3)
-                        else:
-                            size_gb = dest_path.stat().st_size / (1024**3)
-                        print(f"    - {model['name']}: {size_gb:.2f} GB")
+                        print(f"    - {model['name']}: NOT FOUND")
+                        all_good = False
                 else:
-                    print(f"    - {model['name']}: NOT FOUND")
-                    all_good = False
+                    # GGUF: specific .gguf file present in the HF cache
+                    filename = model_config.get('file') or self._pick_quant_for_tier(
+                        model_config, self.tier
+                    )
+                    cached = (
+                        try_to_load_from_cache(repo_id, filename)
+                        if (try_to_load_from_cache and filename)
+                        else None
+                    )
+                    if cached:
+                        print(f"    - {model['name']}: downloaded")
+                    else:
+                        print(f"    - {model['name']}: NOT FOUND")
+                        all_good = False
 
         return all_good
 

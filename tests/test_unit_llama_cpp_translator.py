@@ -17,7 +17,8 @@ sys.modules["llama_cpp"] = _mock_llama_module
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from translators.llama_cpp_translator import LlamaCppTranslator
-from translators.aya23_translator import Aya23Translator, _DEFAULT_MODEL_PATH
+from translators.aya23_translator import Aya23Translator, _get_default_model_path
+import translators.aya23_translator as _aya_mod
 
 
 def _reset_llama_mock():
@@ -27,8 +28,14 @@ def _reset_llama_mock():
 
 
 @pytest.fixture(autouse=True)
-def reset_mocks():
+def reset_mocks(monkeypatch):
     _reset_llama_mock()
+    # Aya23Translator() with no path resolves the GGUF via hf_hub_download —
+    # stub it so tests don't hit the network or HF cache.
+    monkeypatch.setattr(
+        _aya_mod, "hf_hub_download",
+        lambda repo_id, filename, **kw: f"/fake/cache/{filename}",
+    )
 
 
 @pytest.fixture
@@ -245,9 +252,9 @@ class TestAya23Translator:
         called_path = _mock_llama_module.Llama.call_args[1]["model_path"]
         assert "aya-23-8B-Q4_K_M.gguf" in called_path
 
-    def test_default_model_path_constant_correct(self):
-        assert _DEFAULT_MODEL_PATH.name == "aya-23-8B-Q4_K_M.gguf"
-        assert "aya23" in str(_DEFAULT_MODEL_PATH)
+    def test_default_model_path_resolves(self):
+        # Resolves the GGUF filename via hf_hub_download (mocked in reset_mocks)
+        assert _get_default_model_path().endswith("aya-23-8B-Q4_K_M.gguf")
 
     def test_custom_model_path_overrides_default(self):
         Aya23Translator(model_path="/custom/model.gguf")

@@ -40,7 +40,7 @@ MOCK_MODELS_CONFIG = {
             "languages": ["ro", "es", "fr"],
             "repo": "CohereForAI/aya-23-8B",
             "file": "model.gguf",
-            "destination": "models/aya23/model.gguf",
+            "format": "GGUF",
             "huggingface_download": False
         },
         "madlad-400-3b": {
@@ -49,7 +49,6 @@ MOCK_MODELS_CONFIG = {
             "size": "6.0 GB",
             "languages": ["ro", "es", "fr", "no"],
             "repo": "google/madlad400-3b",
-            "destination": "models/madlad400",
             "huggingface_download": True
         },
         "seamlessm4t-v2": {
@@ -58,7 +57,6 @@ MOCK_MODELS_CONFIG = {
             "size": "9.0 GB",
             "languages": ["ro", "es"],
             "repo": "facebook/seamless-m4t-v2-large",
-            "destination": "models/seamlessm4t",
             "huggingface_download": True,
             "requires_tiktoken": True
         }
@@ -331,12 +329,14 @@ class TestProjectSetup:
 
 
     @staticmethod
+    @patch('huggingface_hub.try_to_load_from_cache')
+    @patch('huggingface_hub.scan_cache_dir')
     @patch('setup.subprocess.run')
     @patch('setup.ProjectSetup._check_package_installed')
     @patch('setup.ProjectSetup._check_package_in_pip')
     @patch('setup.ProjectSetup._check_torch_cuda')
-    def test_verify_installation(mock_cuda, mock_pip, mock_pkg, mock_subprocess):
-        """Test installation verification"""
+    def test_verify_installation(mock_cuda, mock_pip, mock_pkg, mock_subprocess, mock_scan, mock_cache):
+        """Test installation verification (model present in HF cache)"""
         print("\n[TEST] _verify_installation")
 
         args = TestProjectSetup.create_mock_args()
@@ -345,7 +345,8 @@ class TestProjectSetup:
             {
                 'key': 'aya23',
                 'name': 'Aya-23-8B',
-                'destination': 'models/aya23/model.gguf',
+                'repo': 'CohereForAI/aya-23-8B-GGUF',
+                'file': 'model.gguf',
                 'huggingface_download': False
             }
         ]
@@ -354,27 +355,25 @@ class TestProjectSetup:
         mock_pkg.return_value = True
         mock_pip.return_value = True
         mock_cuda.return_value = True
+        # GGUF file resolves in the HF cache
+        mock_scan.return_value.repos = []
+        mock_cache.return_value = '/fake/cache/model.gguf'
 
-        # Create a temporary model file
-        with tempfile.TemporaryDirectory() as tmpdir:
-            model_path = Path(tmpdir) / 'models' / 'aya23' / 'model.gguf'
-            model_path.parent.mkdir(parents=True)
-            model_path.write_bytes(b'fake model data')
-
-            with patch('setup.ROOT_DIR', Path(tmpdir)):
-                result = ps._verify_installation()
+        result = ps._verify_installation()
 
         assert result == True, "Should return True when all checks pass"
         print("   [PASS] Verification passes when all components installed")
 
 
     @staticmethod
+    @patch('huggingface_hub.try_to_load_from_cache')
+    @patch('huggingface_hub.scan_cache_dir')
     @patch('setup.subprocess.run')
     @patch('setup.ProjectSetup._check_package_installed')
     @patch('setup.ProjectSetup._check_package_in_pip')
     @patch('setup.ProjectSetup._check_torch_cuda')
-    def test_verify_installation_missing_model(mock_cuda, mock_pip, mock_pkg, mock_subprocess):
-        """Test verification fails when model is missing"""
+    def test_verify_installation_missing_model(mock_cuda, mock_pip, mock_pkg, mock_subprocess, mock_scan, mock_cache):
+        """Test verification fails when model is not in the HF cache"""
         print("\n[TEST] _verify_installation - missing model")
 
         args = TestProjectSetup.create_mock_args()
@@ -383,7 +382,8 @@ class TestProjectSetup:
             {
                 'key': 'aya23',
                 'name': 'Aya-23-8B',
-                'destination': 'models/aya23/model.gguf',
+                'repo': 'CohereForAI/aya-23-8B-GGUF',
+                'file': 'model.gguf',
                 'huggingface_download': False
             }
         ]
@@ -391,11 +391,11 @@ class TestProjectSetup:
         mock_pkg.return_value = True
         mock_pip.return_value = True
         mock_cuda.return_value = True
+        # GGUF file NOT in the cache
+        mock_scan.return_value.repos = []
+        mock_cache.return_value = None
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Don't create the model file
-            with patch('setup.ROOT_DIR', Path(tmpdir)):
-                result = ps._verify_installation()
+        result = ps._verify_installation()
 
         assert result == False, "Should return False when model missing"
         print("   [PASS] Verification fails when model missing")

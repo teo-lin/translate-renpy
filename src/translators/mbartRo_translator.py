@@ -8,7 +8,7 @@ Optimized for English to Romanian translation.
 from pathlib import Path
 from translators.translator_utils import (
     probe_device, safe_generate, apply_glossary, apply_source_conditioned, back_map_for,
-    apply_ro_subjunctive,
+    apply_ro_subjunctive, from_pretrained_cached,
 )
 
 # Try to import transformers dependencies
@@ -60,12 +60,8 @@ class MBARTTranslator:
             device = probe_device()
         self.device = device
 
-        # Use local model path if not provided
-        project_root = Path(__file__).parent.parent.parent
         if model_path is None:
-            model_path = project_root / "models" / "mbartRo"
-        else:
-            model_path = Path(model_path)
+            model_path = "facebook/mbart-large-en-ro"
 
         self.model_path = str(model_path)
 
@@ -75,13 +71,14 @@ class MBARTTranslator:
         print(f"  Model: {model_path}")
         print(f"  Loading model... This may take 30-60 seconds...")
 
-        # Load tokenizer and model from local path
-        self.tokenizer = AutoTokenizer.from_pretrained(str(model_path))
+        # Load tokenizer and model from HF cache (offline-first, fetch if missing)
+        self.tokenizer = from_pretrained_cached(AutoTokenizer, str(model_path))
 
         # Use memory-efficient loading
-        self.model = MBartForConditionalGeneration.from_pretrained(
+        self.model = from_pretrained_cached(
+            MBartForConditionalGeneration,
             str(model_path),
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         )
         self.model = self.model.to(device)
 

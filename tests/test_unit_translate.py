@@ -122,7 +122,7 @@ def test_context_extraction():
     assert len(context['context']) == expected_context_count, \
         f"Expected {expected_context_count} context lines, got {len(context['context'])}"
 
-    print(f"    ✓ Context: {context['context']}")
+    print(f"    [OK] Context: {context['context']}")
 
     # Test 2: CHOICE block should have NO context
     print("\n  Test 1b: CHOICE block context")
@@ -142,7 +142,7 @@ def test_context_extraction():
     assert context['is_choice'] is True, "Should be a choice"
     assert len(context['context']) == 0, "CHOICE should have NO context"
 
-    print("    ✓ No context (as expected for CHOICE)")
+    print("    [OK] No context (as expected for CHOICE)")
 
     print("\n[OK] Context extraction test passed!")
 
@@ -283,10 +283,10 @@ def test_translation_workflow():
         assert updated_blocks['4-Choice']['ro'] != '', "Block 4 should be translated"
         assert updated_blocks['5-Amelia']['ro'] != '', "Block 5 should be translated"
 
-        print(f"    ✓ Block 2: {updated_blocks['2-MainCharacter']['ro']}")
-        print(f"    ✓ Block 3: {updated_blocks['3-Choice']['ro']}")
-        print(f"    ✓ Block 4: {updated_blocks['4-Choice']['ro']}")
-        print(f"    ✓ Block 5: {updated_blocks['5-Amelia']['ro']}")
+        print(f"    [OK] Block 2: {updated_blocks['2-MainCharacter']['ro']}")
+        print(f"    [OK] Block 3: {updated_blocks['3-Choice']['ro']}")
+        print(f"    [OK] Block 4: {updated_blocks['4-Choice']['ro']}")
+        print(f"    [OK] Block 5: {updated_blocks['5-Amelia']['ro']}")
 
         # Verify context was used for DIALOGUE but not for CHOICE
         print("\n[Verifying] Context usage...")
@@ -298,7 +298,7 @@ def test_translation_workflow():
         dialogue_call = dialogue_calls[0]
         assert dialogue_call['context'] is not None and len(dialogue_call['context']) > 0, \
             "DIALOGUE should have context"
-        print(f"    ✓ DIALOGUE block had {len(dialogue_call['context'])} context line(s)")
+        print(f"    [OK] DIALOGUE block had {len(dialogue_call['context'])} context line(s)")
         for ctx_line in dialogue_call['context']:
             print(f"        - {ctx_line}")
 
@@ -311,14 +311,14 @@ def test_translation_workflow():
         actual_context = choice_call['context'] if choice_call['context'] is not None else []
         assert len(actual_context) == 0, \
             f"CHOICE should have empty context, got {len(actual_context)} items: {actual_context}"
-        print(f"    ✓ CHOICE block '{choice_call['text']}' had no context (as expected)")
+        print(f"    [OK] CHOICE block '{choice_call['text']}' had no context (as expected)")
 
         # Verify glossary was used
         print("\n[Verifying] Glossary usage...")
         hi_translation = updated_blocks['2-MainCharacter']['ro']
         assert 'Salut' in hi_translation or 'Bună ziua' in hi_translation, \
             "Glossary should have been applied"
-        print(f"    ✓ Glossary applied: 'Hi' → contains Romanian greeting")
+        print(f"    [OK] Glossary applied: 'Hi' -> contains Romanian greeting")
 
         print("\n[OK] Translation workflow test passed!")
         return True
@@ -464,8 +464,8 @@ def test_language_agnostic():
         assert updated_blocks['1-Amelia']['es'] != '', "Spanish translation missing"
         assert updated_blocks['2-MainCharacter']['es'] != '', "Spanish translation missing"
 
-        print(f"    ✓ Spanish block 1: {updated_blocks['1-Amelia']['es']}")
-        print(f"    ✓ Spanish block 2: {updated_blocks['2-MainCharacter']['es']}")
+        print(f"    [OK] Spanish block 1: {updated_blocks['1-Amelia']['es']}")
+        print(f"    [OK] Spanish block 2: {updated_blocks['2-MainCharacter']['es']}")
 
         print("\n[OK] Language-agnostic test passed!")
         return True

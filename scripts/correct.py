@@ -849,7 +849,8 @@ def main():
         print(f"ERROR: Model '{model_name}' not found in models_config.yaml")
         sys.exit(1)
 
-    model_path = project_root / model_config['destination']
+    from hardware import resolve_model_path
+    model_path = Path(resolve_model_path(model_name))
 
     # Load corrections: merge base + uncensored when both exist
     def _merge_corrections(base, overlay):

@@ -338,4 +338,4 @@ class TestRunScoreParsed:
 
         records = self._load_records(tmp_path)
         ay = next(r for r in records if r["model"] == "ay")
-        assert ay["total"] == 1
+        assert ay["lines"] == 1
