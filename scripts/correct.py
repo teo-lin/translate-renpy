@@ -45,6 +45,8 @@ if sys.platform == "win32":
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from renpy_utils import detect_language_from_path, language_name_from_code
+
 # Fix Windows PATH for CUDA DLLs
 if sys.platform == "win32":
     torch_lib = str(Path(__file__).parent.parent / "venv" / "Lib" / "site-packages" / "torch" / "lib")
@@ -743,36 +745,6 @@ class RenpyFileCorrector:
         return total_stats
 
 
-def detect_language_from_path(path: Path) -> str:
-    """
-    Auto-detect target language from path (e.g., "game/tl/romanian" → "Romanian")
-
-    Returns capitalized language name (e.g., "Romanian", "Spanish", "French")
-    """
-    path_str = str(path).lower().replace('\\', '/')
-
-    # Language mappings (path name → proper name)
-    lang_map = {
-        'romanian': 'Romanian',
-        'spanish': 'Spanish',
-        'french': 'French',
-        'german': 'German',
-        'italian': 'Italian',
-        'portuguese': 'Portuguese',
-        'russian': 'Russian',
-        'turkish': 'Turkish',
-        'czech': 'Czech',
-        'polish': 'Polish',
-        'ukrainian': 'Ukrainian'
-    }
-
-    for path_name, proper_name in lang_map.items():
-        if path_name in path_str:
-            return proper_name
-
-    return "Romanian"  # Default fallback
-
-
 def main():
     """CLI entry point"""
     import argparse
@@ -801,26 +773,11 @@ def main():
         sys.exit(1)
 
     # Determine language code + name (both are needed downstream)
-    lang_code_map = {
-        'Romanian': 'ro',
-        'Spanish': 'es',
-        'French': 'fr',
-        'German': 'de',
-        'Italian': 'it',
-        'Portuguese': 'pt',
-        'Russian': 'ru',
-        'Turkish': 'tr',
-        'Czech': 'cs',
-        'Polish': 'pl',
-        'Ukrainian': 'uk',
-    }
-    code_to_name = {v: k for k, v in lang_code_map.items()}
     if args.language:
         lang_code = args.language
-        target_language = code_to_name.get(lang_code, lang_code.capitalize())
+        target_language = language_name_from_code(lang_code)
     else:
-        target_language = detect_language_from_path(input_path)
-        lang_code = lang_code_map.get(target_language, target_language.lower()[:2])
+        target_language, lang_code = detect_language_from_path(input_path)
 
     # Setup paths
     project_root = Path(__file__).parent.parent

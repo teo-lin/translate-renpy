@@ -22,6 +22,7 @@ try:
         get_character_display_name, create_block_id
     )
     from .renpy_utils import RenpyTagExtractor
+    from .config_utils import load_game_config
 except ImportError:
     # Fall back to absolute import (when run standalone or from tests)
     from models import (
@@ -31,6 +32,7 @@ except ImportError:
         get_character_display_name, create_block_id
     )
     from renpy_utils import RenpyTagExtractor
+    from config_utils import load_game_config
 
 
 class RenpyExtractor:
@@ -423,29 +425,6 @@ def show_banner():
     print("               Translation File Extraction                 ")
     print("=" * 70)
     print()
-
-
-def load_game_config(game_name: str) -> Dict[str, any]:
-    """Load game configuration from current_config.yaml"""
-    project_root = Path(__file__).parent.parent
-    config_path = project_root / "models" / "current_config.yaml"
-
-    if not config_path.exists():
-        print(f"Error: Configuration file not found at {config_path}")
-        print("Please run 1-config.ps1 first to configure a game.")
-        exit(1)
-
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-
-    # Get the game configuration
-    games = config.get('games', {})
-    if game_name not in games:
-        print(f"Error: Game '{game_name}' not found in configuration.")
-        print(f"Available games: {', '.join(games.keys())}")
-        exit(1)
-
-    return games[game_name]
 
 
 def load_character_map(game_path: Path, language_dir: str) -> Dict[str, str]:

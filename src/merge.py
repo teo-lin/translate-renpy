@@ -18,6 +18,7 @@ try:
         FileStructureType, is_separator_block
     )
     from .renpy_utils import RenpyTagExtractor
+    from .config_utils import load_game_config
 except ImportError:
     # Fall back to absolute import (when run standalone or from tests)
     from models import (
@@ -25,6 +26,7 @@ except ImportError:
         FileStructureType, is_separator_block
     )
     from renpy_utils import RenpyTagExtractor
+    from config_utils import load_game_config
 
 
 @dataclass
@@ -334,29 +336,6 @@ def show_banner():
     print("               Translation File Merge                      ")
     print("=" * 70)
     print()
-
-
-def load_game_config(game_name: str) -> Dict:
-    """Load game configuration from current_config.yaml"""
-    project_root = Path(__file__).parent.parent
-    config_path = project_root / "models" / "current_config.yaml"
-
-    if not config_path.exists():
-        print(f"Error: Configuration file not found at {config_path}")
-        print("Please run 1-config.ps1 first to configure a game.")
-        exit(1)
-
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-
-    # Get the game configuration
-    games = config.get('games', {})
-    if game_name not in games:
-        print(f"Error: Game '{game_name}' not found in configuration.")
-        print(f"Available games: {', '.join(games.keys())}")
-        exit(1)
-
-    return games[game_name]
 
 
 def merge_single_file(
