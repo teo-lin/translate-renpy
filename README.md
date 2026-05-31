@@ -34,7 +34,7 @@ Translate **any Ren'Py visual novel** into **400+ languages** using state-of-the
 
 ### 0. **Automated Setup**
 
-First, run setup (once). Check models/SETUP.md for details on what it does and models/MODELS.md for a comparison of selectable LLMs.
+First, run setup (once). Check models/README-MODELS.md for setup details and a comparison of selectable LLMs.
 
 ```powershell
 .\0-setup.ps1 # select desired model(s), language(s) at the prompt
