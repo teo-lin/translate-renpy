@@ -23,6 +23,8 @@ import sys
 import yaml
 from pathlib import Path
 from typing import List, Dict, Tuple
+from datetime import datetime
+import time
 import re
 
 # Try to import BLEU from nltk
@@ -284,6 +286,7 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
 
     scores = []
     results = []
+    t_start = time.time()
 
     for i, item in enumerate(benchmark_data, 1):
         source = item['source']
@@ -326,6 +329,8 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
             'score': score
         })
 
+    duration_s = round(time.time() - t_start, 2)
+
     # Calculate statistics
     avg_score = sum(scores) / len(scores) if scores else 0.0
     min_score = min(scores) if scores else 0.0
@@ -338,6 +343,7 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
     print(f"Average BLEU:     {avg_score:.4f}")
     print(f"Min BLEU:         {min_score:.4f}")
     print(f"Max BLEU:         {max_score:.4f}")
+    print(f"Duration:         {duration_s}s")
 
     # Show best and worst examples
     sorted_results = sorted(results, key=lambda x: x['score'])
@@ -365,8 +371,173 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
         'average_bleu': avg_score,
         'min_bleu': min_score,
         'max_bleu': max_score,
+        'duration_s': duration_s,
         'results': results
     }
+
+
+def _save_benchmark_result(project_root: Path, model_key: str, data_path: Path, stats: dict) -> Path:
+    """Append this run's summary to models/benchmarks.yaml and return the file path."""
+    out_path = project_root / "models" / "benchmarks.yaml"
+
+    existing = []
+    if out_path.exists():
+        with open(out_path, 'r', encoding='utf-8') as f:
+            loaded = yaml.safe_load(f)
+            if isinstance(loaded, list):
+                existing = loaded
+
+    sorted_results = sorted(stats['results'], key=lambda x: x['score'])
+    worst = sorted_results[0]  if sorted_results else {}
+    best  = sorted_results[-1] if sorted_results else {}
+
+    record = {
+        'model':       model_key,
+        'benchmark':   data_path.name,
+        'date':        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'total':       stats['total'],
+        'avg_bleu':    round(stats['average_bleu'], 4),
+        'min_bleu':    round(stats['min_bleu'], 4),
+        'max_bleu':    round(stats['max_bleu'], 4),
+        'duration_s':  stats['duration_s'],
+        'worst': {
+            'source':     worst.get('source', ''),
+            'reference':  worst.get('reference', ''),
+            'hypothesis': worst.get('hypothesis', ''),
+            'score':      round(worst.get('score', 0), 4),
+        },
+        'best': {
+            'source':     best.get('source', ''),
+            'reference':  best.get('reference', ''),
+            'hypothesis': best.get('hypothesis', ''),
+            'score':      round(best.get('score', 0), 4),
+        },
+    }
+
+    existing.append(record)
+    with open(out_path, 'w', encoding='utf-8') as f:
+        yaml.dump(existing, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+    return out_path
+
+
+def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path) -> None:
+    """
+    Score all model columns in a parsed YAML against benchmark references.
+    No model loading — uses existing translations only.
+    Saves one record per model to models/benchmarks.yaml.
+    """
+    print("=" * 70)
+    print("Score from parsed YAML (no re-translation)")
+    print("=" * 70)
+    print(f"\nParsed file: {parsed_path}")
+    print(f"References:  {benchmark_path}")
+
+    # Load reference data: source text → {target, alt_targets}
+    benchmark_data = load_benchmark_data(benchmark_path)
+    ref_map = {item['source']: item for item in benchmark_data}
+    print(f"\nLoaded {len(ref_map)} reference items")
+
+    # Load parsed YAML
+    with open(parsed_path, 'r', encoding='utf-8') as f:
+        parsed = yaml.safe_load(f)
+
+    # Collect all model keys present across blocks (anything that isn't 'en')
+    model_keys = set()
+    for block in parsed.values():
+        if isinstance(block, dict):
+            model_keys.update(k for k in block if k != 'en')
+    model_keys = sorted(model_keys)
+    print(f"Model columns found: {', '.join(model_keys)}")
+
+    # Score each block where en matches a benchmark reference
+    model_item_scores: dict[str, list] = {k: [] for k in model_keys}
+    model_worst: dict[str, dict] = {}
+    model_best:  dict[str, dict] = {}
+    matched_blocks = 0
+
+    for block_id, block in parsed.items():
+        if not isinstance(block, dict):
+            continue
+        en = block.get('en', '').strip()
+        if en not in ref_map:
+            continue
+        matched_blocks += 1
+        ref_item = ref_map[en]
+        references = [ref_item['target']] + (ref_item.get('alt_targets') or [])
+
+        for key in model_keys:
+            hyp = block.get(key, '')
+            if not hyp:
+                continue
+            score = calculate_bleu(references, str(hyp))
+            entry = {'block': block_id, 'source': en,
+                     'reference': ref_item['target'], 'hypothesis': hyp, 'score': score}
+            model_item_scores[key].append(score)
+            if key not in model_worst or score < model_worst[key]['score']:
+                model_worst[key] = entry
+            if key not in model_best or score > model_best[key]['score']:
+                model_best[key] = entry
+
+    print(f"\nMatched {matched_blocks} blocks against references\n")
+    print(f"{'Model':<8}  {'Avg BLEU':>9}  {'Min':>7}  {'Max':>7}  {'N':>4}")
+    print("-" * 45)
+
+    t_start = time.time()
+
+    records = []
+    for key in model_keys:
+        scores = model_item_scores[key]
+        if not scores:
+            continue
+        avg = round(sum(scores) / len(scores), 4)
+        mn  = round(min(scores), 4)
+        mx  = round(max(scores), 4)
+        print(f"{key:<8}  {avg:>9.4f}  {mn:>7.4f}  {mx:>7.4f}  {len(scores):>4}")
+
+        worst_e = model_worst.get(key, {})
+        best_e  = model_best.get(key, {})
+        records.append({
+            'model':      key,
+            'benchmark':  benchmark_path.name,
+            'parsed':     parsed_path.name,
+            'date':       datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'total':      len(scores),
+            'avg_bleu':   avg,
+            'min_bleu':   mn,
+            'max_bleu':   mx,
+            'duration_s': round(time.time() - t_start, 2),
+            'worst': {
+                'block':      worst_e.get('block', ''),
+                'source':     worst_e.get('source', ''),
+                'reference':  worst_e.get('reference', ''),
+                'hypothesis': str(worst_e.get('hypothesis', '')),
+                'score':      round(worst_e.get('score', 0), 4),
+            },
+            'best': {
+                'block':      best_e.get('block', ''),
+                'source':     best_e.get('source', ''),
+                'reference':  best_e.get('reference', ''),
+                'hypothesis': str(best_e.get('hypothesis', '')),
+                'score':      round(best_e.get('score', 0), 4),
+            },
+        })
+
+    print()
+
+    # Append all records to benchmarks.yaml
+    out_path = project_root / "models" / "benchmarks.yaml"
+    existing = []
+    if out_path.exists():
+        with open(out_path, 'r', encoding='utf-8') as f:
+            loaded = yaml.safe_load(f)
+            if isinstance(loaded, list):
+                existing = loaded
+    existing.extend(records)
+    with open(out_path, 'w', encoding='utf-8') as f:
+        yaml.dump(existing, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+    print(f"Results saved to: {out_path}")
 
 
 def _auto_detect_glossary(data_path: Path) -> Path:
@@ -516,7 +687,10 @@ def run_orchestrate():
             print("Cancelled by user.")
             sys.exit(0)
 
-    run_benchmark(data_path, glossary_path, model_key)
+    stats = run_benchmark(data_path, glossary_path, model_key)
+
+    saved_path = _save_benchmark_result(project_root, model_key, data_path, stats)
+    print(f"\nResults saved to: {saved_path}")
 
 
 def main():
@@ -560,8 +734,96 @@ def main():
     run_benchmark(data_path, glossary_path, model_key)
 
 
+def _lang_code_from_path(path: Path) -> str:
+    """Infer ISO lang code from a tl/<lang_name>/ segment in the path."""
+    lang_dir_map = {
+        'romanian': 'ro', 'spanish': 'es', 'french': 'fr', 'german': 'de',
+        'italian': 'it', 'portuguese': 'pt', 'russian': 'ru', 'turkish': 'tr',
+        'czech': 'cs', 'polish': 'pl', 'ukrainian': 'uk', 'bulgarian': 'bg',
+        'chinese': 'zh', 'japanese': 'ja', 'korean': 'ko', 'vietnamese': 'vi',
+        'thai': 'th', 'indonesian': 'id', 'arabic': 'ar', 'hebrew': 'he',
+        'persian': 'fa', 'hindi': 'hi', 'bengali': 'bn', 'dutch': 'nl',
+        'swedish': 'sv', 'norwegian': 'no', 'danish': 'da', 'finnish': 'fi',
+        'greek': 'el', 'hungarian': 'hu',
+    }
+    for part in path.parts:
+        code = lang_dir_map.get(part.lower())
+        if code:
+            return code
+    return 'ro'
+
+
+def _select_parsed_yaml_interactive(project_root: Path) -> Path:
+    """Use the shared game selector to pick a game, then select a parsed YAML from it."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    from config import select_game
+    from config_selector import select_item
+
+    _game_name, game_path = select_game()
+
+    tl_root = game_path / "game" / "tl"
+    parsed_files = sorted(tl_root.rglob("*.parsed.yaml")) if tl_root.exists() else []
+
+    if not parsed_files:
+        print(f"ERROR: No .parsed.yaml files found under {tl_root}")
+        sys.exit(1)
+
+    if len(parsed_files) == 1:
+        print(f"\nAuto-selecting: {parsed_files[0].relative_to(project_root)}")
+        return parsed_files[0]
+
+    items = [{"name": f.relative_to(project_root).as_posix(), "path": f} for f in parsed_files]
+    selected = select_item(
+        title="Select parsed YAML to score",
+        items=items,
+        item_formatter_func=lambda f, i: f"  [{i}] {f['name']}",
+        item_type_name="file",
+    )
+    return selected["path"]
+
+
+def run_score_parsed_cli():
+    import argparse
+    parser = argparse.ArgumentParser(description='Score all model columns in a parsed YAML against benchmark references')
+    parser.add_argument('_', help='score-parsed command')
+    parser.add_argument('--parsed', default=None,
+                        help='Path to .parsed.yaml file (interactive game selector if omitted)')
+    parser.add_argument('--benchmark', default=None,
+                        help='Benchmark reference YAML (auto-detected from language if omitted)')
+    args = parser.parse_args()
+
+    project_root = Path(__file__).parent.parent
+
+    if args.parsed:
+        parsed_path = Path(args.parsed)
+        if not parsed_path.is_absolute():
+            parsed_path = project_root / parsed_path
+        if not parsed_path.exists():
+            print(f"ERROR: Parsed file not found: {parsed_path}")
+            sys.exit(1)
+    else:
+        parsed_path = _select_parsed_yaml_interactive(project_root)
+
+    if args.benchmark:
+        benchmark_path = Path(args.benchmark)
+        if not benchmark_path.is_absolute():
+            benchmark_path = project_root / benchmark_path
+    else:
+        lang = _lang_code_from_path(parsed_path)
+        benchmark_path = project_root / "data" / f"{lang}_uncensored_benchmark.yaml"
+        if not benchmark_path.exists():
+            benchmark_path = project_root / "data" / f"{lang}_benchmark.yaml"
+    if not benchmark_path.exists():
+        print(f"ERROR: Benchmark reference file not found: {benchmark_path}")
+        sys.exit(1)
+
+    run_score_parsed(parsed_path, benchmark_path, project_root)
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "orchestrate":
         run_orchestrate()
+    elif len(sys.argv) > 1 and sys.argv[1] == "score-parsed":
+        run_score_parsed_cli()
     else:
         main()

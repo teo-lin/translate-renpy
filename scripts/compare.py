@@ -85,11 +85,15 @@ class BenchmarkTranslator:
         structure = tags_file['structure']
         block_order = structure['block_order']
 
-        # Get ALL translatable blocks (not just untranslated ones)
-        all_block_ids = [bid for bid in parsed_blocks if not is_separator_block(bid, parsed_blocks[bid])]
-        total_blocks = len(all_block_ids)
+        # Only translate blocks that don't already have this key (enables resuming)
+        all_block_ids = [
+            bid for bid in parsed_blocks
+            if not is_separator_block(bid, parsed_blocks[bid])
+            and not str(parsed_blocks[bid].get(self.save_key, '')).strip()
+        ]
+        total_blocks = len([bid for bid in parsed_blocks if not is_separator_block(bid, parsed_blocks[bid])])
 
-        print(f"    Total blocks to translate: {total_blocks}")
+        print(f"    Total blocks: {total_blocks}  |  Missing key '{self.save_key}': {len(all_block_ids)}")
 
         if not all_block_ids:
             print("    [OK] No blocks to translate!")
@@ -647,7 +651,7 @@ def _select_game_interactive() -> str:
     return selected["name"]
 
 
-def run_full_comparison(game_name: str, language: str) -> int:
+def run_full_comparison(game_name: str, language: str, model_filter: list = None) -> int:
     """
     Run the full model comparison workflow.
 
@@ -694,53 +698,69 @@ def run_full_comparison(game_name: str, language: str) -> int:
         print("Please run 0-setup.ps1 first to install models.")
         return 1
 
+    if model_filter:
+        unknown = [m for m in model_filter if m not in models_config['available_models']]
+        if unknown:
+            print(f"ERROR: Unknown model key(s): {', '.join(unknown)}")
+            return 1
+        installed_models = [m for m in model_filter if m in installed_models]
+        if not installed_models:
+            print(f"ERROR: None of the requested models are installed: {', '.join(model_filter)}")
+            return 1
+
     print(f"   Found {len(installed_models)} installed models:")
     for model_key in installed_models:
         model_info = models_config['available_models'][model_key]
         print(f"      - {model_info['name']}")
     print()
 
-    # Step 2: Configure game
-    print(f"[2/5] Configuring game: {game_name} with language: {language}...")
-    first_model = installed_models[0]
-    print(f"   Using initial model: {first_model}")
-
-    # Get full game path
+    # Get full game path (needed for steps 2-3 and for locating parsed YAMLs)
     full_game_path = project_root / "games" / game_name
     if not full_game_path.exists():
         print(f"ERROR: Game directory not found: {full_game_path}")
         return 1
 
-    config_script = project_root / "1-config.ps1"
-    result = subprocess.run(
-        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File",
-         str(config_script), "-GamePath", str(full_game_path),
-         "-Language", language, "-Model", first_model],
-        capture_output=True,
-        text=True
-    )
+    if model_filter:
+        # Skip configure + extract: preserve all existing translations in the parsed YAML
+        print("[2/5] Skipping configuration (model filter mode — preserving existing translations)")
+        print("[3/5] Skipping extraction (model filter mode — parsed YAML already exists)")
+        print()
+    else:
+        # Step 2: Configure game
+        print(f"[2/5] Configuring game: {game_name} with language: {language}...")
+        first_model = installed_models[0]
+        print(f"   Using initial model: {first_model}")
 
-    # Check if config file exists
-    current_config_path = project_root / "models" / "current_config.yaml"
-    if not current_config_path.exists():
-        print("ERROR: Configuration failed - config file not created!")
-        return 1
-    print("   [OK] Configuration successful")
-    print()
+        config_script = project_root / "1-config.ps1"
+        result = subprocess.run(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File",
+             str(config_script), "-GamePath", str(full_game_path),
+             "-Language", language, "-Model", first_model],
+            capture_output=True,
+            text=True
+        )
 
-    # Step 3: Extract translation files
-    print("[3/5] Extracting translation files...")
-    extract_script = project_root / "2-extract.ps1"
-    result = subprocess.run(
-        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File",
-         str(extract_script), "-GameName", game_name, "-All"],
-        capture_output=False
-    )
+        # Check if config file exists
+        current_config_path = project_root / "models" / "current_config.yaml"
+        if not current_config_path.exists():
+            print("ERROR: Configuration failed - config file not created!")
+            return 1
+        print("   [OK] Configuration successful")
+        print()
 
-    if result.returncode != 0:
-        print("ERROR: Extraction failed!")
-        return 1
-    print()
+        # Step 3: Extract translation files
+        print("[3/5] Extracting translation files...")
+        extract_script = project_root / "2-extract.ps1"
+        result = subprocess.run(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File",
+             str(extract_script), "-GameName", game_name, "-All"],
+            capture_output=False
+        )
+
+        if result.returncode != 0:
+            print("ERROR: Extraction failed!")
+            return 1
+        print()
 
     # Step 4: Compare each model
     print("[4/5] Running comparison translations...")
@@ -770,9 +790,10 @@ def run_full_comparison(game_name: str, language: str) -> int:
     _KEY_OVERRIDES = {
         'ayaExpanse8b':   'ae',
         'euroLLM9b':      'eu',
-        'euroLLM22b':     'e2',
-        'nllb1300':       'n3',
-        'seamlessm96':  'se',
+        'euroLLM22b':     'el',
+        'nllb1300':       'nb',
+        'opusTCBig':      'tc',
+        'seamlessm96':    'se',
     }
 
     for model_idx, model_key in enumerate(installed_models):
@@ -906,10 +927,13 @@ if __name__ == "__main__":
         parser.add_argument('--game', type=str, default=None,
                             help='Game name (prompts interactively if omitted)')
         parser.add_argument('--language', type=str, required=True, help='Language code (e.g., ro)')
+        parser.add_argument('--models', type=str, default=None,
+                            help='Comma-separated model keys to run (e.g. euroLLM22b,opusTCBig); runs all if omitted')
         args = parser.parse_args()
 
         game_name = args.game or _select_game_interactive()
-        exit_code = run_full_comparison(game_name, args.language)
+        model_filter = [m.strip() for m in args.models.split(',')] if args.models else None
+        exit_code = run_full_comparison(game_name, args.language, model_filter)
         sys.exit(exit_code)
     else:
         # Regular single-model mode
