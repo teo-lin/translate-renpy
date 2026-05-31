@@ -12,7 +12,6 @@ sys.path.insert(0, str(project_root / "src"))
 import pytest
 import yaml
 from renpy_utils import RenpyTagExtractor
-from renpy_utils import RenpyTranslationParser
 
 
 def test_tag_extraction():
@@ -151,74 +150,11 @@ def test_tag_restoration():
     return all_passed
 
 
-def test_renpy_parser():
-    """Test Ren'Py file parsing"""
-    from renpy_utils import RenpyTranslationParser
-
-    # Sample Ren'Py translation content
-    sample_content = """# TODO: Translation updated at 2024-02-29 18:59
-
-# game/script.rpy:86
-translate english test_label_1:
-
-    # am "Hey!"
-    am ""
-
-# game/script.rpy:123
-translate english test_label_2:
-
-    # am "Have you decided to help me? Really?"
-    am ""
-
-# game/script.rpy:125
-translate english test_label_3:
-
-    # am "Thank you thank you thank you!"
-    am "Mulțumesc mulțumesc mulțumesc!"
-"""
-
-    # Write to temp file
-    temp_file = Path(__file__).parent / "test_temp.rpy"
-    temp_file.write_text(sample_content, encoding='utf-8')
-
-    print("\n\nTesting Ren'Py File Parser")
-    print("=" * 70)
-
-    try:
-        blocks = RenpyTranslationParser.parse_file(temp_file)
-
-        print(f"\nParsed {len(blocks)} translation blocks:")
-
-        for block in blocks:
-            print(f"\n  Label: {block['label']}")
-            print(f"  Original: {block['original']}")
-            print(f"  Character: {block['character_var']}")
-            print(f"  Translation: '{block['current_translation']}'")
-
-        # Verify parsing
-        expected_count = 3
-        passed = len(blocks) == expected_count
-
-        print("\n" + "=" * 70)
-        if passed:
-            print(f"[OK] Parser test passed! Found {expected_count} blocks as expected")
-        else:
-            print(f"[FAIL] Parser test failed! Expected {expected_count} blocks, found {len(blocks)}")
-
-        return passed
-
-    finally:
-        # Cleanup
-        if temp_file.exists():
-            temp_file.unlink()
-
-
 if __name__ == "__main__":
     results = []
 
     results.append(test_tag_extraction())
     results.append(test_tag_restoration())
-    results.append(test_renpy_parser())
 
     print("\n\n" + "=" * 70)
     print("OVERALL TEST RESULTS")

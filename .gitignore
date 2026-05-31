@@ -5,6 +5,10 @@ __pycache__/
 *.so
 .Python
 venv/
+*.egg-info/
+.coverage
+.coverage.*
+.pytest_cache/
 
 # IDE
 .vscode/

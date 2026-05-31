@@ -14,7 +14,7 @@ from translators.translator_utils import (
 # Try to import transformers dependencies
 try:
     import torch
-    from transformers import MBartForConditionalGeneration, MBartTokenizer, AutoTokenizer
+    from transformers import MBartForConditionalGeneration, AutoTokenizer
     TRANSFORMERS_AVAILABLE = True
     IMPORT_ERROR = None
 except ImportError as e:
@@ -22,7 +22,6 @@ except ImportError as e:
     IMPORT_ERROR = str(e)
     # Define dummy classes to avoid NameError
     MBartForConditionalGeneration = None
-    MBartTokenizer = None
     torch = None
 
 

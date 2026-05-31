@@ -5,7 +5,7 @@ This module defines TypedDict classes and enums for type-safe data handling
 across the extraction, translation, and merge phases.
 """
 
-from typing import TypedDict, Literal, Optional, List, Dict, Any
+from typing import TypedDict, Literal, Optional, List, Dict
 from enum import Enum
 
 
@@ -120,52 +120,6 @@ class TagsFileContent(TypedDict):
     structure: FileStructure
     blocks: Dict[str, TaggedBlock]  # Block ID -> TaggedBlock
     character_map: Dict[str, str]   # Character variable -> Display name
-
-
-class ParsedFileContent(TypedDict):
-    """Complete content of a .parsed.yaml file."""
-    # YAML structure is just: Dict[str, ParsedBlock]
-    # No top-level keys, just block IDs as keys
-
-
-# ============================================================================
-# TYPED DICTIONARIES - CHARACTERS
-# ============================================================================
-
-class CharacterInfo(TypedDict):
-    """Information about a character."""
-    name: str                       # Display name
-    gender: Literal["male", "female", "neutral", "other"]
-    type: Literal["main", "protagonist", "supporting", "system", "narrator"]
-    description: Optional[str]      # Optional description
-
-
-class CharactersFileContent(TypedDict):
-    """Complete content of characters.json file."""
-    # Key is character variable (e.g., "jm")
-    # Value is CharacterInfo
-    pass  # TypedDict with dynamic keys, defined as Dict[str, CharacterInfo] in usage
-
-
-# ============================================================================
-# TYPED DICTIONARIES - CONFIGURATION
-# ============================================================================
-
-class GameConfig(TypedDict, total=False):
-    """Configuration for a specific game."""
-    name: str                       # Game name
-    path: str                       # Game root path
-    target_language: str            # Target language code
-    source_language: str            # Source language code (default: "english")
-    model: str                      # Model name for translation
-    context_before: int             # Lines of context before (default: 3)
-    context_after: int              # Lines of context after (default: 1)
-
-
-class LocalConfig(TypedDict):
-    """Content of models/current_config.json."""
-    games: Dict[str, GameConfig]    # Game name -> GameConfig
-    current_game: Optional[str]     # Currently selected game name
 
 
 # ============================================================================

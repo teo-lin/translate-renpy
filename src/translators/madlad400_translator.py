@@ -15,7 +15,7 @@ from translators.translator_utils import (
 # Try to import transformers dependencies
 try:
     import torch
-    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, BitsAndBytesConfig
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
     TRANSFORMERS_AVAILABLE = True
     IMPORT_ERROR = None
 except ImportError as e:
@@ -24,7 +24,6 @@ except ImportError as e:
     # Define dummy classes to avoid NameError
     AutoTokenizer = None
     AutoModelForSeq2SeqLM = None
-    BitsAndBytesConfig = None
     torch = None
 
 

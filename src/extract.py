@@ -16,7 +16,7 @@ from datetime import datetime
 try:
     # Try relative import (when used as package)
     from .models import (
-        BlockType, FileStructureType, CharacterType,
+        BlockType, FileStructureType,
         RenpyBlock, ParsedBlock, TaggedBlock, TagInfo,
         ParsedFileMetadata, FileStructure, TagsFileContent,
         get_character_display_name, create_block_id
@@ -25,7 +25,7 @@ try:
 except ImportError:
     # Fall back to absolute import (when run standalone or from tests)
     from models import (
-        BlockType, FileStructureType, CharacterType,
+        BlockType, FileStructureType,
         RenpyBlock, ParsedBlock, TaggedBlock, TagInfo,
         ParsedFileMetadata, FileStructure, TagsFileContent,
         get_character_display_name, create_block_id
