@@ -20,6 +20,8 @@ Usage:
 """
 
 import sys
+import os
+import contextlib
 import yaml
 from pathlib import Path
 from typing import List, Dict, Tuple
@@ -35,6 +37,111 @@ except ImportError:
     NLTK_AVAILABLE = False
     print("WARNING: nltk not installed. Install with: pip install nltk")
     print("Falling back to simple word-match accuracy")
+
+# Try to import chrF from sacrebleu
+try:
+    from sacrebleu.metrics import CHRF as _CHRF
+    _chrf_metric = _CHRF()
+    SACREBLEU_AVAILABLE = True
+except ImportError:
+    SACREBLEU_AVAILABLE = False
+
+# COMET lazy loader — checks HF cache before loading; never triggers a download
+_comet_model = None
+_comet_load_attempted = False
+
+# Mirror of compare.py's MODEL_KEY_OVERRIDES — keep both in sync.
+_KEY_OVERRIDES: dict[str, str] = {
+    'ayaExpanse8b': 'ae',
+    'euroLLM9b':    'eu',
+    'euroLLM22b':   'el',
+    'nllb1300':     'nb',
+    'opusTCBig':    'tc',
+    'seamlessm96':  'se',
+}
+
+
+def _gpu_count() -> int:
+    try:
+        import torch
+        return 1 if torch.cuda.is_available() else 0
+    except ImportError:
+        return 0
+
+
+def _build_model_name_map(project_root: Path) -> dict[str, str]:
+    """Return {short_key: model_name} for every model in models_config.yaml."""
+    cfg_path = project_root / 'models' / 'models_config.yaml'
+    if not cfg_path.exists():
+        return {}
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        cfg = yaml.safe_load(f)
+    result = {}
+    for full_key, info in cfg.get('available_models', {}).items():
+        short_key = _KEY_OVERRIDES.get(full_key, full_key[:2].lower())
+        result[short_key] = info.get('name', full_key)
+    return result
+
+
+@contextlib.contextmanager
+def _quiet():
+    """Redirect stdout+stderr to null at the fd level, silencing all third-party noise."""
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    saved_fds = [os.dup(1), os.dup(2)]
+    os.dup2(devnull_fd, 1)
+    os.dup2(devnull_fd, 2)
+    old_streams = sys.stdout, sys.stderr
+    sys.stdout = sys.stderr = open(os.devnull, 'w')
+    try:
+        yield
+    finally:
+        sys.stdout, sys.stderr = old_streams
+        os.dup2(saved_fds[0], 1)
+        os.dup2(saved_fds[1], 2)
+        for fd in saved_fds:
+            os.close(fd)
+        os.close(devnull_fd)
+
+
+def _get_comet_model():
+    global _comet_model, _comet_load_attempted
+    if _comet_load_attempted:
+        return _comet_model
+    _comet_load_attempted = True
+
+    # Silence HF progress bars before download_model is called
+    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
+    try:
+        with _quiet():
+            from comet import download_model, load_from_checkpoint
+    except ImportError:
+        print("INFO: unbabel-comet not installed — COMET scoring disabled.")
+        return None
+
+    # Prefer the project-local HF cache (populated by 0-setup.ps1)
+    project_root = Path(__file__).parent.parent
+    local_hf_home = project_root / "models"
+    local_cache = local_hf_home / "hub" / "models--Unbabel--wmt22-comet-da"
+    default_cache = (
+        Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))
+        / "hub" / "models--Unbabel--wmt22-comet-da"
+    )
+    if local_cache.exists():
+        os.environ["HF_HOME"] = str(local_hf_home)
+    elif not default_cache.exists():
+        print("INFO: COMET model not cached — run 0-setup.ps1 to download it.")
+        return None
+
+    try:
+        with _quiet():
+            model_path = download_model("Unbabel/wmt22-comet-da")
+            _comet_model = load_from_checkpoint(model_path)
+        return _comet_model
+    except Exception as e:
+        print(f"WARNING: COMET model failed to load: {e}")
+        return None
+
 
 # Fix Windows PATH for CUDA DLLs
 if sys.platform == "win32":
@@ -87,6 +194,30 @@ def calculate_bleu(references, hypothesis: str) -> float:
 
     smoothing = SmoothingFunction().method1
     return sentence_bleu(ref_token_lists, hyp_tokens, smoothing_function=smoothing)
+
+
+def compound_score(bleu: float, chrf: float, comet: float | None) -> float:
+    """
+    Weighted compound score correlating with human judgment.
+    With COMET:    0.5 * COMET + 0.3 * chrF + 0.2 * BLEU
+    Without COMET: 0.6 * chrF  + 0.4 * BLEU
+    """
+    if comet is not None:
+        return 0.5 * comet + 0.3 * chrf + 0.2 * bleu
+    return 0.6 * chrf + 0.4 * bleu
+
+
+def calculate_chrf(references, hypothesis: str) -> float:
+    """
+    Calculate chrF score (character n-gram F-score, the FLORES metric).
+    Returns score between 0.0 (worst) and 1.0 (perfect match).
+    Falls back to 0.0 if sacrebleu is not installed.
+    """
+    if isinstance(references, str):
+        references = [references]
+    if not SACREBLEU_AVAILABLE:
+        return 0.0
+    return _chrf_metric.sentence_score(hypothesis, references).score / 100.0
 
 
 def load_benchmark_data(data_path: Path) -> List[Dict]:
@@ -284,7 +415,9 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
     print("Running translations...")
     print("=" * 70)
 
-    scores = []
+    bleu_scores = []
+    chrf_scores = []
+    comet_inputs = []
     results = []
     t_start = time.time()
 
@@ -312,37 +445,60 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
             context=context_list
         )
 
-        # Calculate BLEU against primary + any alternates
-        score = calculate_bleu(references, hypothesis)
-        scores.append(score)
+        bleu = calculate_bleu(references, hypothesis)
+        chrf = calculate_chrf(references, hypothesis)
+        bleu_scores.append(bleu)
+        chrf_scores.append(chrf)
+        comet_inputs.append({'src': source, 'mt': hypothesis, 'ref': reference})
 
         print(f"  Reference:  {reference}")
         for alt in alt_targets:
             print(f"  Alt:        {alt}")
         print(f"  Hypothesis: {hypothesis}")
-        print(f"  BLEU Score: {score:.4f}")
+        print(f"  BLEU: {bleu:.4f}  chrF: {chrf:.4f}")
 
         results.append({
             'source': source,
             'reference': reference,
             'hypothesis': hypothesis,
-            'score': score
+            'score': bleu,
+            'chrf': chrf,
         })
+
+    # Batch COMET scoring
+    comet_scores = []
+    comet_model = _get_comet_model()
+    if comet_model is not None:
+        print("\nRunning COMET predictions...")
+        try:
+            with _quiet():
+                output = comet_model.predict(
+                    comet_inputs, batch_size=16, gpus=_gpu_count(), progress_bar=False
+                )
+            comet_scores = output.scores
+            for res, cs in zip(results, comet_scores):
+                res['comet'] = cs
+        except Exception as e:
+            print(f"WARNING: COMET prediction failed: {e}")
 
     duration_s = round(time.time() - t_start, 2)
 
-    # Calculate statistics
-    avg_score = sum(scores) / len(scores) if scores else 0.0
-    min_score = min(scores) if scores else 0.0
-    max_score = max(scores) if scores else 0.0
+    avg_bleu  = sum(bleu_scores)  / len(bleu_scores)  if bleu_scores  else 0.0
+    min_bleu  = min(bleu_scores)                       if bleu_scores  else 0.0
+    max_bleu  = max(bleu_scores)                       if bleu_scores  else 0.0
+    avg_flores  = sum(chrf_scores)  / len(chrf_scores)   if chrf_scores  else 0.0
+    avg_comet = sum(comet_scores) / len(comet_scores)  if comet_scores else None
+    avg_cmpd  = compound_score(avg_bleu, avg_flores, avg_comet)
 
     print("\n" + "=" * 70)
     print("RESULTS")
     print("=" * 70)
     print(f"\nTotal test cases: {len(benchmark_data)}")
-    print(f"Average BLEU:     {avg_score:.4f}")
-    print(f"Min BLEU:         {min_score:.4f}")
-    print(f"Max BLEU:         {max_score:.4f}")
+    print(f"Average BLEU:     {avg_bleu:.4f}")
+    print(f"Average chrF:     {avg_flores:.4f}")
+    if avg_comet is not None:
+        print(f"Average COMET:    {avg_comet:.4f}")
+    print(f"Average Score:    {avg_cmpd:.4f}")
     print(f"Duration:         {duration_s}s")
 
     # Show best and worst examples
@@ -354,7 +510,7 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
     print(f"  Source:     {worst['source']}")
     print(f"  Reference:  {worst['reference']}")
     print(f"  Hypothesis: {worst['hypothesis']}")
-    print(f"  Score:      {worst['score']:.4f}")
+    print(f"  BLEU: {worst['score']:.4f}  chrF: {worst['chrf']:.4f}")
 
     print("\n" + "-" * 70)
     print("BEST TRANSLATION:")
@@ -362,18 +518,25 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
     print(f"  Source:     {best['source']}")
     print(f"  Reference:  {best['reference']}")
     print(f"  Hypothesis: {best['hypothesis']}")
-    print(f"  Score:      {best['score']:.4f}")
+    print(f"  BLEU: {best['score']:.4f}  chrF: {best['chrf']:.4f}")
 
     print("\n" + "=" * 70)
 
-    return {
-        'total': len(benchmark_data),
-        'average_bleu': avg_score,
-        'min_bleu': min_score,
-        'max_bleu': max_score,
-        'duration_s': duration_s,
-        'results': results
+    stats = {
+        'total':          len(benchmark_data),
+        'average_bleu':   avg_bleu,
+        'min_bleu':       min_bleu,
+        'max_bleu':       max_bleu,
+        'average_flores':   avg_flores,
+        'average_score': avg_cmpd,
+        'duration_s':     duration_s,
+        'results':        results,
     }
+    if avg_comet is not None:
+        stats['average_comet'] = avg_comet
+        stats['min_comet']     = min(comet_scores)
+        stats['max_comet']     = max(comet_scores)
+    return stats
 
 
 def _save_benchmark_result(project_root: Path, model_key: str, data_path: Path, stats: dict) -> Path:
@@ -387,32 +550,19 @@ def _save_benchmark_result(project_root: Path, model_key: str, data_path: Path, 
             if isinstance(loaded, list):
                 existing = loaded
 
-    sorted_results = sorted(stats['results'], key=lambda x: x['score'])
-    worst = sorted_results[0]  if sorted_results else {}
-    best  = sorted_results[-1] if sorted_results else {}
+    name_map = _build_model_name_map(project_root)
+    short_key = _KEY_OVERRIDES.get(model_key, model_key[:2].lower())
 
-    record = {
-        'model':       model_key,
-        'benchmark':   data_path.name,
-        'date':        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'total':       stats['total'],
-        'avg_bleu':    round(stats['average_bleu'], 4),
-        'min_bleu':    round(stats['min_bleu'], 4),
-        'max_bleu':    round(stats['max_bleu'], 4),
-        'duration_s':  stats['duration_s'],
-        'worst': {
-            'source':     worst.get('source', ''),
-            'reference':  worst.get('reference', ''),
-            'hypothesis': worst.get('hypothesis', ''),
-            'score':      round(worst.get('score', 0), 4),
-        },
-        'best': {
-            'source':     best.get('source', ''),
-            'reference':  best.get('reference', ''),
-            'hypothesis': best.get('hypothesis', ''),
-            'score':      round(best.get('score', 0), 4),
-        },
+    record: dict = {
+        'model':    short_key,
+        'name':     name_map.get(short_key, model_key),
+        'lines':    stats['total'],
+        'avg_bleu': round(stats['average_bleu'], 4),
+        'avg_flores': round(stats.get('average_flores', 0.0), 4),
     }
+    if 'average_comet' in stats:
+        record['avg_comet'] = round(stats['average_comet'], 4)
+    record['avg_score'] = round(stats.get('average_score', 0.0), 4)
 
     existing.append(record)
     with open(out_path, 'w', encoding='utf-8') as f:
@@ -451,7 +601,9 @@ def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path
     print(f"Model columns found: {', '.join(model_keys)}")
 
     # Score each block where en matches a benchmark reference
-    model_item_scores: dict[str, list] = {k: [] for k in model_keys}
+    model_item_bleu:  dict[str, list] = {k: [] for k in model_keys}
+    model_item_chrf:  dict[str, list] = {k: [] for k in model_keys}
+    model_comet_data: dict[str, list] = {k: [] for k in model_keys}
     model_worst: dict[str, dict] = {}
     model_best:  dict[str, dict] = {}
     matched_blocks = 0
@@ -470,58 +622,78 @@ def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path
             hyp = block.get(key, '')
             if not hyp:
                 continue
-            score = calculate_bleu(references, str(hyp))
+            hyp_str = str(hyp)
+            bleu  = calculate_bleu(references, hyp_str)
+            chrf  = calculate_chrf(references, hyp_str)
             entry = {'block': block_id, 'source': en,
-                     'reference': ref_item['target'], 'hypothesis': hyp, 'score': score}
-            model_item_scores[key].append(score)
-            if key not in model_worst or score < model_worst[key]['score']:
+                     'reference': ref_item['target'], 'hypothesis': hyp_str, 'score': bleu}
+            model_item_bleu[key].append(bleu)
+            model_item_chrf[key].append(chrf)
+            model_comet_data[key].append({'src': en, 'mt': hyp_str, 'ref': ref_item['target']})
+            if key not in model_worst or bleu < model_worst[key]['score']:
                 model_worst[key] = entry
-            if key not in model_best or score > model_best[key]['score']:
+            if key not in model_best or bleu > model_best[key]['score']:
                 model_best[key] = entry
 
-    print(f"\nMatched {matched_blocks} blocks against references\n")
-    print(f"{'Model':<8}  {'Avg BLEU':>9}  {'Min':>7}  {'Max':>7}  {'N':>4}")
-    print("-" * 45)
+    # Batch COMET predictions per model (skipped if model not cached)
+    comet_model = _get_comet_model()
+    model_item_comet: dict[str, list] = {}
+    if comet_model is not None:
+        gpus = _gpu_count()
+        print("Running COMET predictions...")
+        for key in model_keys:
+            data = model_comet_data[key]
+            if not data:
+                continue
+            try:
+                with _quiet():
+                    output = comet_model.predict(data, batch_size=16, gpus=gpus, progress_bar=False)
+                model_item_comet[key] = output.scores
+            except Exception as e:
+                print(f"  WARNING: COMET failed for '{key}': {e}")
 
-    t_start = time.time()
+    print(f"\nMatched {matched_blocks} blocks against references\n")
+
+    use_comet = bool(model_item_comet)
+    name_map = _build_model_name_map(project_root)
 
     records = []
     for key in model_keys:
-        scores = model_item_scores[key]
-        if not scores:
+        bleus  = model_item_bleu[key]
+        chrfs  = model_item_chrf[key]
+        comets = model_item_comet.get(key)
+        if not bleus:
             continue
-        avg = round(sum(scores) / len(scores), 4)
-        mn  = round(min(scores), 4)
-        mx  = round(max(scores), 4)
-        print(f"{key:<8}  {avg:>9.4f}  {mn:>7.4f}  {mx:>7.4f}  {len(scores):>4}")
+        avg_bleu  = round(sum(bleus) / len(bleus), 4)
+        avg_flores  = round(sum(chrfs) / len(chrfs), 4) if chrfs else 0.0
+        avg_comet = round(sum(comets) / len(comets), 4) if comets else None
+        avg_cmpd  = compound_score(avg_bleu, avg_flores, avg_comet)
 
-        worst_e = model_worst.get(key, {})
-        best_e  = model_best.get(key, {})
-        records.append({
-            'model':      key,
-            'benchmark':  benchmark_path.name,
-            'parsed':     parsed_path.name,
-            'date':       datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'total':      len(scores),
-            'avg_bleu':   avg,
-            'min_bleu':   mn,
-            'max_bleu':   mx,
-            'duration_s': round(time.time() - t_start, 2),
-            'worst': {
-                'block':      worst_e.get('block', ''),
-                'source':     worst_e.get('source', ''),
-                'reference':  worst_e.get('reference', ''),
-                'hypothesis': str(worst_e.get('hypothesis', '')),
-                'score':      round(worst_e.get('score', 0), 4),
-            },
-            'best': {
-                'block':      best_e.get('block', ''),
-                'source':     best_e.get('source', ''),
-                'reference':  best_e.get('reference', ''),
-                'hypothesis': str(best_e.get('hypothesis', '')),
-                'score':      round(best_e.get('score', 0), 4),
-            },
-        })
+        record: dict = {
+            'model':    key,
+            'name':     name_map.get(key, key),
+            'lines':    len(bleus),
+            'avg_bleu': avg_bleu,
+            'avg_flores': avg_flores,
+        }
+        if avg_comet is not None:
+            record['avg_comet'] = avg_comet
+        record['avg_score'] = round(avg_cmpd, 4)
+        records.append(record)
+
+    records.sort(key=lambda r: r['avg_score'], reverse=True)
+
+    if use_comet:
+        print(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'COMET':>7}  {'Score':>7}  {'Name'}")
+        print("-" * 60)
+        for r in records:
+            comet_str = f"{r['avg_comet']:>7.4f}" if 'avg_comet' in r else f"{'N/A':>7}"
+            print(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {comet_str}  {r['avg_score']:>7.4f}  {r['name']}")
+    else:
+        print(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'Score':>7}  {'Name'}")
+        print("-" * 50)
+        for r in records:
+            print(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {r['avg_score']:>7.4f}  {r['name']}")
 
     print()
 

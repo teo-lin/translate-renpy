@@ -42,6 +42,7 @@ class ProjectSetup:
         self.available_models = []
         self.venv_python = self._get_venv_python_path()
         self.tier = "low"
+        self.wants_comet = False
 
     def run(self):
         """Main method to run the setup process in sequence."""
@@ -77,8 +78,11 @@ class ProjectSetup:
                 self._select_languages()
             self._load_installed_models_from_current_config()
 
+        self._prompt_comet()
+
         if not self.args.skip_python:
             self._setup_python_env()
+            self._setup_comet()
         else:
             print()
             print("=" * 70)
@@ -414,6 +418,45 @@ class ProjectSetup:
         self._run_venv_pip(["install", "-r", str(REQUIREMENTS_PATH)], quiet=True)
 
         print("  Python environment setup complete!")
+
+    def _prompt_comet(self):
+        """Ask the user whether to download the COMET scoring model."""
+        print()
+        print("=" * 70)
+        print("Optional: COMET Benchmark Scoring")
+        print("=" * 70)
+        print()
+        print("  COMET is a neural MT metric that correlates better with human")
+        print("  judgement than BLEU. Requires ~1.6 GB for the wmt22-comet-da model.")
+        print()
+        answer = input("  Download COMET model for benchmarking? (Y/N): ").strip().lower()
+        self.wants_comet = answer in ('y', 'yes')
+        if not self.wants_comet:
+            print("  Skipping COMET. You can re-run setup later to add it.")
+
+    def _setup_comet(self):
+        """Install unbabel-comet and download the COMET model (only if user opted in)."""
+        if not self.wants_comet:
+            return
+
+        if not self._check_package_in_pip("unbabel-comet"):
+            print("  Installing unbabel-comet...")
+            self._run_venv_pip(["install", "unbabel-comet"], quiet=False)
+        else:
+            print("  unbabel-comet already installed")
+
+        print("  Downloading wmt22-comet-da model (~1.6 GB)...")
+        py_code = (
+            "from comet import download_model; "
+            "path = download_model('Unbabel/wmt22-comet-da'); "
+            "print('Model cached at:', path)"
+        )
+        try:
+            subprocess.run([str(self.venv_python), "-c", py_code], check=True)
+            print("  COMET model ready!")
+        except subprocess.CalledProcessError as e:
+            print(f"  WARNING: COMET model download failed: {e}")
+            print("  Benchmarking will fall back to BLEU + chrF only.")
 
     def _get_venv_python_path(self):
         return VENV_PATH / ("Scripts" if platform.system() == "Windows" else "bin") / "python.exe"

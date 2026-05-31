@@ -32,6 +32,18 @@ from translators.seamless96_translator import SeamlessM4Tv2Translator
 from translators.translator_utils import load_prompt_template
 from renpy_utils import show_progress
 
+# Short column keys written into parsed YAMLs. Overrides where first-2-chars
+# would collide (e.g. aya23 and ayaExpanse8b both start with "ay").
+# Keep this in sync with benchmark.py's _KEY_OVERRIDES.
+MODEL_KEY_OVERRIDES: dict[str, str] = {
+    'ayaExpanse8b': 'ae',
+    'euroLLM9b':    'eu',
+    'euroLLM22b':   'el',
+    'nllb1300':     'nb',
+    'opusTCBig':    'tc',
+    'seamlessm96':  'se',
+}
+
 
 class BenchmarkTranslator:
     """
@@ -786,19 +798,9 @@ def run_full_comparison(game_name: str, language: str, model_filter: list = None
     benchmark_results = []
     benchmark_start_time = time.time()
 
-    # Explicit key overrides to avoid collisions (e.g. aya23 and ayaExpanse8b both start with "ay")
-    _KEY_OVERRIDES = {
-        'ayaExpanse8b':   'ae',
-        'euroLLM9b':      'eu',
-        'euroLLM22b':     'el',
-        'nllb1300':       'nb',
-        'opusTCBig':      'tc',
-        'seamlessm96':    'se',
-    }
-
     for model_idx, model_key in enumerate(installed_models):
         model_info = models_config['available_models'][model_key]
-        key_number = _KEY_OVERRIDES.get(model_key, model_key[:2].lower())
+        key_number = MODEL_KEY_OVERRIDES.get(model_key, model_key[:2].lower())
 
         print()
         print(f"   [{model_idx + 1}/{len(installed_models)}] Model: {model_info['name']} -> Key: {key_number}")
