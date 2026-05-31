@@ -41,10 +41,19 @@ except ImportError:
 # Try to import chrF from sacrebleu
 try:
     from sacrebleu.metrics import CHRF as _CHRF
-    _chrf_metric = _CHRF()
+    _chrf_metric = _CHRF(word_order=2)  # chrF++
     SACREBLEU_AVAILABLE = True
 except ImportError:
     SACREBLEU_AVAILABLE = False
+
+# Try to import METEOR from nltk (requires WordNet corpus)
+try:
+    from nltk.translate.meteor_score import meteor_score as _nltk_meteor
+    import nltk as _nltk_lib
+    _nltk_lib.data.find('corpora/wordnet')
+    METEOR_AVAILABLE = True
+except (ImportError, LookupError):
+    METEOR_AVAILABLE = False
 
 # COMET lazy loader — checks HF cache before loading; never triggers a download
 _comet_model = None
@@ -196,15 +205,14 @@ def calculate_bleu(references, hypothesis: str) -> float:
     return sentence_bleu(ref_token_lists, hyp_tokens, smoothing_function=smoothing)
 
 
-def compound_score(bleu: float, chrf: float, comet: float | None) -> float:
+def compound_score(bleu: float, chrf: float, comet: float | None, meteor: float | None = None) -> float | None:
     """
-    Weighted compound score correlating with human judgment.
-    With COMET:    0.5 * COMET + 0.3 * chrF + 0.2 * BLEU
-    Without COMET: 0.6 * chrF  + 0.4 * BLEU
+    0.60*COMET + 0.25*chrF++ + 0.10*METEOR + 0.05*BLEU.
+    Returns None if any metric is unavailable — Score column is omitted rather than computed with reduced weights.
     """
-    if comet is not None:
-        return 0.5 * comet + 0.3 * chrf + 0.2 * bleu
-    return 0.6 * chrf + 0.4 * bleu
+    if comet is None or meteor is None:
+        return None
+    return 0.60 * comet + 0.25 * chrf + 0.10 * meteor + 0.05 * bleu
 
 
 def calculate_chrf(references, hypothesis: str) -> float:
@@ -218,6 +226,23 @@ def calculate_chrf(references, hypothesis: str) -> float:
     if not SACREBLEU_AVAILABLE:
         return 0.0
     return _chrf_metric.sentence_score(hypothesis, references).score / 100.0
+
+
+def calculate_meteor(references, hypothesis: str) -> float | None:
+    """
+    Calculate METEOR score with stemming and synonym matching via WordNet.
+    Returns None if nltk or WordNet data is unavailable.
+    """
+    if not METEOR_AVAILABLE:
+        return None
+    if isinstance(references, str):
+        references = [references]
+    hyp_tokens = tokenize(hypothesis)
+    ref_token_lists = [tokenize(r) for r in references]
+    try:
+        return _nltk_meteor(ref_token_lists, hyp_tokens)
+    except LookupError:
+        return None
 
 
 def load_benchmark_data(data_path: Path) -> List[Dict]:
@@ -417,6 +442,7 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
 
     bleu_scores = []
     chrf_scores = []
+    meteor_scores_per_item = []
     comet_inputs = []
     results = []
     t_start = time.time()
@@ -445,17 +471,21 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
             context=context_list
         )
 
-        bleu = calculate_bleu(references, hypothesis)
-        chrf = calculate_chrf(references, hypothesis)
+        bleu   = calculate_bleu(references, hypothesis)
+        chrf   = calculate_chrf(references, hypothesis)
+        meteor = calculate_meteor(references, hypothesis)
         bleu_scores.append(bleu)
         chrf_scores.append(chrf)
+        if meteor is not None:
+            meteor_scores_per_item.append(meteor)
         comet_inputs.append({'src': source, 'mt': hypothesis, 'ref': reference})
 
         print(f"  Reference:  {reference}")
         for alt in alt_targets:
             print(f"  Alt:        {alt}")
         print(f"  Hypothesis: {hypothesis}")
-        print(f"  BLEU: {bleu:.4f}  chrF: {chrf:.4f}")
+        meteor_str = f"  METEOR: {meteor:.4f}" if meteor is not None else ""
+        print(f"  BLEU: {bleu:.4f}  chrF: {chrf:.4f}{meteor_str}")
 
         results.append({
             'source': source,
@@ -463,6 +493,7 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
             'hypothesis': hypothesis,
             'score': bleu,
             'chrf': chrf,
+            'meteor': meteor,
         })
 
     # Batch COMET scoring
@@ -483,22 +514,26 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
 
     duration_s = round(time.time() - t_start, 2)
 
-    avg_bleu  = sum(bleu_scores)  / len(bleu_scores)  if bleu_scores  else 0.0
-    min_bleu  = min(bleu_scores)                       if bleu_scores  else 0.0
-    max_bleu  = max(bleu_scores)                       if bleu_scores  else 0.0
-    avg_flores  = sum(chrf_scores)  / len(chrf_scores)   if chrf_scores  else 0.0
-    avg_comet = sum(comet_scores) / len(comet_scores)  if comet_scores else None
-    avg_cmpd  = compound_score(avg_bleu, avg_flores, avg_comet)
+    avg_bleu   = sum(bleu_scores)  / len(bleu_scores)  if bleu_scores  else 0.0
+    min_bleu   = min(bleu_scores)                       if bleu_scores  else 0.0
+    max_bleu   = max(bleu_scores)                       if bleu_scores  else 0.0
+    avg_chrf   = sum(chrf_scores)  / len(chrf_scores)   if chrf_scores  else 0.0
+    avg_meteor = sum(meteor_scores_per_item) / len(meteor_scores_per_item) if meteor_scores_per_item else None
+    avg_comet  = sum(comet_scores) / len(comet_scores)  if comet_scores else None
+    avg_cmpd   = compound_score(avg_bleu, avg_chrf, avg_comet, avg_meteor)
 
     print("\n" + "=" * 70)
     print("RESULTS")
     print("=" * 70)
     print(f"\nTotal test cases: {len(benchmark_data)}")
     print(f"Average BLEU:     {avg_bleu:.4f}")
-    print(f"Average chrF:     {avg_flores:.4f}")
+    print(f"Average chrF++:   {avg_chrf:.4f}")
+    if avg_meteor is not None:
+        print(f"Average METEOR:   {avg_meteor:.4f}")
     if avg_comet is not None:
         print(f"Average COMET:    {avg_comet:.4f}")
-    print(f"Average Score:    {avg_cmpd:.4f}")
+    if avg_cmpd is not None:
+        print(f"Average Score:    {avg_cmpd:.4f}")
     print(f"Duration:         {duration_s}s")
 
     # Show best and worst examples
@@ -523,15 +558,18 @@ def run_benchmark(data_path: Path, glossary_path: Path = None, model_key: str = 
     print("\n" + "=" * 70)
 
     stats = {
-        'total':          len(benchmark_data),
-        'average_bleu':   avg_bleu,
-        'min_bleu':       min_bleu,
-        'max_bleu':       max_bleu,
-        'average_flores':   avg_flores,
-        'average_score': avg_cmpd,
-        'duration_s':     duration_s,
-        'results':        results,
+        'total':        len(benchmark_data),
+        'average_bleu': avg_bleu,
+        'min_bleu':     min_bleu,
+        'max_bleu':     max_bleu,
+        'average_chrf': avg_chrf,
+        'duration_s':   duration_s,
+        'results':      results,
     }
+    if avg_cmpd is not None:
+        stats['average_score'] = avg_cmpd
+    if avg_meteor is not None:
+        stats['average_meteor'] = avg_meteor
     if avg_comet is not None:
         stats['average_comet'] = avg_comet
         stats['min_comet']     = min(comet_scores)
@@ -558,11 +596,14 @@ def _save_benchmark_result(project_root: Path, model_key: str, data_path: Path, 
         'name':     name_map.get(short_key, model_key),
         'lines':    stats['total'],
         'avg_bleu': round(stats['average_bleu'], 4),
-        'avg_flores': round(stats.get('average_flores', 0.0), 4),
+        'avg_chrf': round(stats.get('average_chrf', 0.0), 4),
     }
+    if 'average_meteor' in stats:
+        record['avg_meteor'] = round(stats['average_meteor'], 4)
     if 'average_comet' in stats:
         record['avg_comet'] = round(stats['average_comet'], 4)
-    record['avg_score'] = round(stats.get('average_score', 0.0), 4)
+    if 'average_score' in stats:
+        record['avg_score'] = round(stats['average_score'], 4)
 
     existing.append(record)
     with open(out_path, 'w', encoding='utf-8') as f:
@@ -601,9 +642,10 @@ def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path
     print(f"Model columns found: {', '.join(model_keys)}")
 
     # Score each block where en matches a benchmark reference
-    model_item_bleu:  dict[str, list] = {k: [] for k in model_keys}
-    model_item_chrf:  dict[str, list] = {k: [] for k in model_keys}
-    model_comet_data: dict[str, list] = {k: [] for k in model_keys}
+    model_item_bleu:   dict[str, list] = {k: [] for k in model_keys}
+    model_item_chrf:   dict[str, list] = {k: [] for k in model_keys}
+    model_item_meteor: dict[str, list] = {k: [] for k in model_keys}
+    model_comet_data:  dict[str, list] = {k: [] for k in model_keys}
     model_worst: dict[str, dict] = {}
     model_best:  dict[str, dict] = {}
     matched_blocks = 0
@@ -623,12 +665,15 @@ def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path
             if not hyp:
                 continue
             hyp_str = str(hyp)
-            bleu  = calculate_bleu(references, hyp_str)
-            chrf  = calculate_chrf(references, hyp_str)
+            bleu   = calculate_bleu(references, hyp_str)
+            chrf   = calculate_chrf(references, hyp_str)
+            meteor = calculate_meteor(references, hyp_str)
             entry = {'block': block_id, 'source': en,
                      'reference': ref_item['target'], 'hypothesis': hyp_str, 'score': bleu}
             model_item_bleu[key].append(bleu)
             model_item_chrf[key].append(chrf)
+            if meteor is not None:
+                model_item_meteor[key].append(meteor)
             model_comet_data[key].append({'src': en, 'mt': hyp_str, 'ref': ref_item['target']})
             if key not in model_worst or bleu < model_worst[key]['score']:
                 model_worst[key] = entry
@@ -654,47 +699,63 @@ def run_score_parsed(parsed_path: Path, benchmark_path: Path, project_root: Path
 
     print(f"\nMatched {matched_blocks} blocks against references\n")
 
-    use_comet = bool(model_item_comet)
+    use_comet  = bool(model_item_comet)
+    use_meteor = any(model_item_meteor.get(k) for k in model_keys)
     name_map = _build_model_name_map(project_root)
 
     records = []
     for key in model_keys:
-        bleus  = model_item_bleu[key]
-        chrfs  = model_item_chrf[key]
-        comets = model_item_comet.get(key)
+        bleus   = model_item_bleu[key]
+        chrfs   = model_item_chrf[key]
+        meteors = model_item_meteor.get(key) or []
+        comets  = model_item_comet.get(key)
         if not bleus:
             continue
-        avg_bleu  = round(sum(bleus) / len(bleus), 4)
-        avg_flores  = round(sum(chrfs) / len(chrfs), 4) if chrfs else 0.0
-        avg_comet = round(sum(comets) / len(comets), 4) if comets else None
-        avg_cmpd  = compound_score(avg_bleu, avg_flores, avg_comet)
+        avg_bleu   = round(sum(bleus)   / len(bleus),   4)
+        avg_chrf   = round(sum(chrfs)   / len(chrfs),   4) if chrfs   else 0.0
+        avg_meteor = round(sum(meteors) / len(meteors), 4) if meteors else None
+        avg_comet  = round(sum(comets)  / len(comets),  4) if comets  else None
+        avg_cmpd   = compound_score(avg_bleu, avg_chrf, avg_comet, avg_meteor)
 
         record: dict = {
             'model':    key,
             'name':     name_map.get(key, key),
             'lines':    len(bleus),
             'avg_bleu': avg_bleu,
-            'avg_flores': avg_flores,
+            'avg_chrf': avg_chrf,
         }
+        if avg_meteor is not None:
+            record['avg_meteor'] = avg_meteor
         if avg_comet is not None:
             record['avg_comet'] = avg_comet
-        record['avg_score'] = round(avg_cmpd, 4)
+        if avg_cmpd is not None:
+            record['avg_score'] = round(avg_cmpd, 4)
         records.append(record)
 
-    records.sort(key=lambda r: r['avg_score'], reverse=True)
+    records.sort(key=lambda r: r.get('avg_score', r.get('avg_comet', r.get('avg_meteor', r['avg_chrf']))), reverse=True)
 
     table_lines = []
-    if use_comet:
-        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'COMET':>7}  {'Score':>7}  {'Name'}")
-        table_lines.append("-" * 60)
+    if use_comet and use_meteor:
+        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'chrF++':>7}  {'METEOR':>7}  {'COMET':>7}  {'Score':>7}  {'Name'}")
+        table_lines.append("-" * 70)
         for r in records:
-            comet_str = f"{r['avg_comet']:>7.4f}" if 'avg_comet' in r else f"{'N/A':>7}"
-            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {comet_str}  {r['avg_score']:>7.4f}  {r['name']}")
-    else:
-        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'FLORES':>7}  {'Score':>7}  {'Name'}")
+            score_str = f"{r['avg_score']:>7.4f}" if 'avg_score' in r else f"{'N/A':>7}"
+            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_chrf']:>7.4f}  {r['avg_meteor']:>7.4f}  {r['avg_comet']:>7.4f}  {score_str}  {r['name']}")
+    elif use_comet:
+        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'chrF++':>7}  {'COMET':>7}  {'Name'}")
         table_lines.append("-" * 50)
         for r in records:
-            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_flores']:>7.4f}  {r['avg_score']:>7.4f}  {r['name']}")
+            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_chrf']:>7.4f}  {r['avg_comet']:>7.4f}  {r['name']}")
+    elif use_meteor:
+        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'chrF++':>7}  {'METEOR':>7}  {'Name'}")
+        table_lines.append("-" * 50)
+        for r in records:
+            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_chrf']:>7.4f}  {r['avg_meteor']:>7.4f}  {r['name']}")
+    else:
+        table_lines.append(f"{'Model':<8}  {'BLEU':>7}  {'chrF++':>7}  {'Name'}")
+        table_lines.append("-" * 36)
+        for r in records:
+            table_lines.append(f"{r['model']:<8}  {r['avg_bleu']:>7.4f}  {r['avg_chrf']:>7.4f}  {r['name']}")
 
     for line in table_lines:
         print(line)
@@ -939,10 +1000,25 @@ def _lang_code_from_path(path: Path) -> str:
 def _select_parsed_yaml_interactive(project_root: Path) -> Path:
     """Use the shared game selector to pick a game, then select a parsed YAML from it."""
     sys.path.insert(0, str(Path(__file__).parent))
-    from config import select_game
     from config_selector import select_item
 
-    _game_name, game_path = select_game()
+    # Use the game already configured by 1-config.ps1 if available
+    game_path = None
+    current_config_path = project_root / 'models' / 'current_config.yaml'
+    if current_config_path.exists():
+        with open(current_config_path, 'r', encoding='utf-8') as f:
+            current_cfg = yaml.safe_load(f) or {}
+        current_game = current_cfg.get('current_game')
+        if current_game:
+            game_info = current_cfg.get('games', {}).get(current_game, {})
+            path_str = game_info.get('path')
+            if path_str and Path(path_str).exists():
+                game_path = Path(path_str)
+                print(f"\nUsing configured game: {current_game}")
+
+    if game_path is None:
+        from config import select_game
+        _game_name, game_path = select_game()
 
     tl_root = game_path / "game" / "tl"
     parsed_files = sorted(tl_root.rglob("*.parsed.yaml")) if tl_root.exists() else []

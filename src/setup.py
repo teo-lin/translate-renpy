@@ -43,6 +43,7 @@ class ProjectSetup:
         self.venv_python = self._get_venv_python_path()
         self.tier = "low"
         self.wants_comet = False
+        self.wants_meteor = False
 
     def run(self):
         """Main method to run the setup process in sequence."""
@@ -83,6 +84,7 @@ class ProjectSetup:
         if not self.args.skip_python:
             self._setup_python_env()
             self._setup_comet()
+            self._setup_meteor()
         else:
             print()
             print("=" * 70)
@@ -420,19 +422,28 @@ class ProjectSetup:
         print("  Python environment setup complete!")
 
     def _prompt_comet(self):
-        """Ask the user whether to download the COMET scoring model."""
+        """Ask the user which optional scoring models to download."""
         print()
         print("=" * 70)
-        print("Optional: COMET Benchmark Scoring")
+        print("Optional: Benchmark Scoring Models")
         print("=" * 70)
         print()
-        print("  COMET is a neural MT metric that correlates better with human")
-        print("  judgement than BLEU. Requires ~1.6 GB for the wmt22-comet-da model.")
+        print("  [1] COMET  — Neural MT metric, best human correlation (~1.6 GB)")
+        print("  [2] METEOR — Synonym-aware matching, better than BLEU (NLTK WordNet, ~12 MB)")
+        print("  [A] All")
+        print("  [Q] Skip")
         print()
-        answer = input("  Download COMET model for benchmarking? (Y/N): ").strip().lower()
-        self.wants_comet = answer in ('y', 'yes')
-        if not self.wants_comet:
-            print("  Skipping COMET. You can re-run setup later to add it.")
+        answer = input("  Select (1, 2, A, Q — comma-separated for multiple): ").strip().lower()
+        choices = {c.strip() for c in answer.split(',')}
+        self.wants_comet  = 'a' in choices or '1' in choices
+        self.wants_meteor = 'a' in choices or '2' in choices
+        if not self.wants_comet and not self.wants_meteor:
+            print("  Skipping optional scoring models. Re-run setup to add them later.")
+        else:
+            selected = []
+            if self.wants_comet:  selected.append("COMET")
+            if self.wants_meteor: selected.append("METEOR")
+            print(f"  Will download: {', '.join(selected)}")
 
     def _setup_comet(self):
         """Install unbabel-comet and download the COMET model (only if user opted in)."""
@@ -457,6 +468,29 @@ class ProjectSetup:
         except subprocess.CalledProcessError as e:
             print(f"  WARNING: COMET model download failed: {e}")
             print("  Benchmarking will fall back to BLEU + chrF only.")
+
+    def _setup_meteor(self):
+        """Download and extract NLTK WordNet data for METEOR scoring (only if user opted in)."""
+        if not self.wants_meteor:
+            return
+        print("  Downloading NLTK WordNet data for METEOR (~12 MB)...")
+        py_code = (
+            "import nltk, zipfile, os; "
+            "nltk.download('wordnet', quiet=True); "
+            "nltk.download('omw-1.4', quiet=True); "
+            # Extract any ZIPs that NLTK left unextracted (Windows quirk)
+            "corpora_dir = os.path.join(nltk.data.path[0], 'corpora'); "
+            "[zipfile.ZipFile(os.path.join(corpora_dir, f)).extractall(corpora_dir) "
+            " for f in os.listdir(corpora_dir) if f.endswith('.zip')]; "
+            "nltk.data.find('corpora/wordnet'); "
+            "print('WordNet ready')"
+        )
+        try:
+            subprocess.run([str(self.venv_python), "-c", py_code], check=True)
+            print("  METEOR / WordNet ready!")
+        except subprocess.CalledProcessError as e:
+            print(f"  WARNING: WordNet download or extraction failed: {e}")
+            print("  METEOR scoring will be unavailable.")
 
     def _get_venv_python_path(self):
         return VENV_PATH / ("Scripts" if platform.system() == "Windows" else "bin") / "python.exe"
