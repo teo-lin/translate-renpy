@@ -60,8 +60,5 @@ models/*
 data/**/*uncensored*
 
 # Root
-/TROUBLESHOOTING.md
-/STATUS.md
 /PLAN.md
 models/current_config.yaml
-models/README-MODELS.md
