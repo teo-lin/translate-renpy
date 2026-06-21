@@ -1,269 +1,224 @@
 # Automated Batch Ren'Py Translation
 
-## Goal
+Local, fully offline translation of Ren'Py visual novels from English into
+Romanian (and 400+ other languages) using state-of-the-art local LLMs and MT
+models on a consumer laptop GPU (tested on RTX 3060 / RTX 5070 Laptop, Windows).
 
-Local LLM transtation from English to Romanian of visual ren'py novels, fully context-aware, gramattically correct, following the same tone and style as the original, no censorship/filtering with the best available models (12 tested, 10+ available)
+Context-aware, grammatically correct, tone-preserving, and uncensored (able to
+translate explicit adult content with correct Romanian declensions, conjugations,
+and syntax).
+
+> **This repo (`translate-renpy`) is the full Ren'Py kit:** it downloads the
+> Ren'Py SDK plus `rpaExtract` and `UnRen` so you can unpack `.rpa` archives,
+> generate translation templates, and rebuild the game. If you already have the
+> unpacked `game/tl/<language>/*.rpy` files and want only the translation engine,
+> use the lighter `translate-local` repo instead. A future single-codebase split
+> is described in `DECOUPLING PLAN README.md`.
 
 ## Features
 
-Translate **any Ren'Py visual novel** into **400+ languages** using state-of-the-art local AI models on consumer grade laptop GPU (tested with RTX 3060, Windows)
-
-- **Automated model download** - interactive setup script
-- **Automated virtual environment and dependencies setup** - interactive setup script, run once.
-- **Multi Model Support** - Choose between the most fit LLMs available in huggingface for this task
-- **Modular Pipeline** - Extract → Translate → Merge workflow for better control and performance
-- **Local Translation** - No cloud services, complete privacy
-- **Preserves Ren'Py Formatting** - Keeps `{color=...}`, `{size=...}`, `[variables]` intact
-- **Glossary Support** - Consistent terminology across your translations
-- **Grammar Correction** - Optional post-processing for improved quality (Aya-23-8B)
-- **Quality Benchmarking** - BLEU score testing against reference translations
-- **Batch Processing** - Translate entire games automatically
-- **Full GPU Acceleration** - Fast translation with CUDA support
-- **Human Review Workflow** - Edit translations in YAML format before merging
-- **Git-Friendly** - Track translation changes with clean diffs
-- **Low spec requirements** - NVIDIA GPU with 6GB+ VRAM (CUDA 12.4) - tested with RTX3060 on Windows. Uses all available GPU layers.
+- **Automated setup** - one interactive script installs the venv, dependencies,
+  models, and Ren'Py tooling.
+- **Multi-model support** - choose among 13 translation models (LLM and MT
+  backends); see `models/README-MODELS.md` for the full ranked comparison.
+- **Hardware-aware** - detects a compute tier (cpu_only / low / medium / high)
+  and picks model quantization and batch size accordingly.
+- **Modular pipeline** - Config -> Extract -> Translate -> Correct -> Merge, with
+  human-reviewable YAML between every stage.
+- **Preserves Ren'Py formatting** - `{color=...}`, `{size=...}`, `{b}...{/b}`,
+  and `[variables]` are stripped before translation and restored on merge.
+- **Glossary + correction support** - enforce terminology and fix recurring
+  model errors via per-language YAML files.
+- **Quality benchmarking** - COMET / chrF++ / METEOR / BLEU compound scoring
+  against reference translations.
+- **Grammar correction** - optional LLM + pattern post-processing pass.
+- **Full GPU acceleration** - CUDA 12.4, uses all available GPU layers.
 
 ## Prerequisites
 
-- **NVIDIA GPU** with 6 GB+ VRAM (CUDA 12.4) - tested on RTX 3060
-- **Windows Developer Mode** - must be enabled for HuggingFace hub symlinks
-  - Without it, model files are duplicated on disk, using ~2x storage
-  - Enable: `Settings > System > For developers > toggle ON`
+- **NVIDIA GPU** with 6 GB+ VRAM (CUDA 12.4) - tested on RTX 3060. CPU-only also
+  works for the small MT models, slower.
+- **Windows Developer Mode** - enable so the HuggingFace cache can use symlinks;
+  without it model files are duplicated (~2x disk).
+  Enable: `Settings > System > For developers > toggle ON`.
 
-## How to use (Setup & Translation Workflows)
+## Setup
 
-### 0. **Automated Setup**
-
-First, run setup (once). Check models/README-MODELS.md for setup details and a comparison of selectable LLMs.
-
-```powershell
-.\0-setup.ps1 # select desired model(s), language(s) at the prompt
-```
-
-**Model storage:** Models download to the default HuggingFace cache
-(`%USERPROFILE%\.cache\huggingface\hub\`), not into the project. This way they
-are shared across all projects on your machine and downloaded only once. The
-project's `models/` folder keeps only small YAML config files.
-
-This app supports **three translation workflows**:
-
-### 1. **All-in-One Workflow**
-
-Simple, automated translation in a single step. Best for quick translations.
+Run once. It walks through 8 steps: hardware detection, language selection, model
+selection, Python environment, model download, **external tools (Ren'Py SDK +
+rpaExtract + UnRen)**, verification, and writing the compute profile.
 
 ```powershell
-.\5-3-translate.ps1  # Processes .rpy files directly
+.\0-setup.ps1            # interactive: pick languages and models at the prompt
 ```
 
-### 2. **Modular Workflow** (Recommended for Control)
-
-Three-phase pipeline with human review checkpoints. See Pipelines section below for more info..
+Skip flags for re-runs:
 
 ```powershell
-# interactive scripts - allow you to select desired game, target language(s), model(s)
-.\1-config.ps1  # game setup (one-time)
-.\2-extract.ps1  # extract clean text and tags to separate files, token-efficient
-.\3-translate.ps1 # batched
-.\4-correct.ps1 # optional. human readable format
-.\5-merge.ps1 # merge translation and tags back to .rpy
+.\0-setup.ps1 --skip-model      # skip model download
+.\0-setup.ps1 --skip-tools      # skip Ren'Py SDK / tools download
+.\0-setup.ps1 --skip-python     # skip venv / dependency setup
+.\0-setup.ps1 --languages all   # non-interactive language selection
 ```
 
----
+**Model storage:** models download to the default HuggingFace cache
+(`%USERPROFILE%\.cache\huggingface\hub\`), shared across projects and fetched
+only once. The project's `models/` folder holds only small YAML config files.
 
-### 3. **Manual Mode** (Advanced)
+## Translation Pipeline
 
-You can also call the Python scripts directly with specific arguments:
-
-**Example: Aya-23-8B (23 Languages, Higher Quality):**
+Each launcher is interactive and reads the selections you made during setup. They
+forward to the Python entry points shown in parentheses.
 
 ```powershell
-python scripts\translate_with_aya23.py "Example\game\tl\<language>" --language <Language> # Translate entire game
-python scripts\translate_with_aya23.py "path\to\file.rpy" # Translate single file
-python scripts\correct.py "path\to\game\game\tl\<language>"
-
-# Fast pattern corrections only
-.\4-correct.ps1 "path\to\game\game\tl\<language>" --patterns-only
-
-# Full correction (patterns + LLM)
-.\4-correct.ps1 "path\to\game\game\tl\<language>"
-
-# Preview changes without modifying files
-.\4-correct.ps1 "path\to\game\game\tl\<language>" --dry-run
+.\1-config.ps1      # one-time per game: set game path, language, model  (scripts/config.py)
+.\2-extract.ps1     # .rpy -> .parsed.yaml (clean text) + .tags.yaml     (src/extract.py)
+.\3-translate.ps1   # batched translation of the .parsed.yaml files       (scripts/translate.py)
+.\4-correct.ps1     # optional grammar/pattern correction pass            (scripts/correct.py)
+.\5-merge.ps1       # .parsed.yaml + .tags.yaml -> .translated.rpy        (src/merge.py)
 ```
 
-### 4. Optional: Benchmark Script: `scripts\benchmark.py`
-
-Benchmarks translation quality using BLEU scores by comparing model outputs to reference translations.
-
-**Features:**
-
-- Calculates BLEU scores for translation quality assessment
-- Auto-detects language from filename
-- Auto-detects matching glossary
-- Shows average, min, max scores and best/worst examples
-
-**Benchmark Data Format:**
-Create `data/<language>_benchmark.json` with reference translations:
-
-```json
-[
-  {
-    "source": "English text to translate",
-    "target": "Reference translation",
-    "context": "Optional previous dialogue"
-  }
-]
-```
-
-**Usage:**
+Common arguments (the launchers also accept these and pass them through):
 
 ```powershell
-# Run benchmark with auto-detected glossary
-.\8-compare.ps1 data\ro_benchmark.json
-
-# Run with explicit glossary
-.\8-compare.ps1 data\ro_benchmark.json --glossary data\ro_glossary.json
-
-# Run for other languages
-.\8-compare.ps1 data\de_benchmark.json
+.\1-config.ps1 -GamePath "games\MyGame" -Language ro -Model euroLLM9b
+.\2-extract.ps1 -GameName MyGame -All          # or -Source script.rpy
+.\3-translate.ps1                              # uses current_game from config
+.\4-correct.ps1 "games\MyGame\game\tl\romanian" --patterns-only   # or --dry-run / --llm-only
+.\5-merge.ps1 -GameName MyGame -All            # or -Source script ; --skip-validation
 ```
 
-**Template Files:**
+See `games/Example/README.md` for an end-to-end walkthrough on the bundled
+example game.
 
-- `data/ro_glossary.json` - Example glossary template
-- `data/ro_benchmark.json` - Example benchmark data template
+## Benchmarking
+
+```powershell
+.\8-compare.ps1     # translate a reference set with a model and score it (scripts/compare.py)
+.\9-benchmark.ps1   # score existing translations against a benchmark file (scripts/benchmark.py)
+```
+
+Reference data lives in `data/` as YAML, e.g. `data/ro_benchmark.yaml` and
+`data/ro_uncensored_benchmark.yaml`. Compound score:
+`0.60*COMET + 0.25*chrF++ + 0.10*METEOR + 0.05*BLEU` (computed only when all four
+metrics are available). COMET and METEOR are optional downloads offered during
+setup. Full methodology and the model ranking are in `models/README-MODELS.md`.
+
+## Testing
+
+```powershell
+.\7-test.ps1                          # interactive test runner
+.\venv\Scripts\pytest.exe tests/      # or run pytest directly
+```
+
+See `tests/TESTS-README.md` for the test map and execution details.
 
 ## Configuration
 
-### Custom Prompts
+### Prompts
 
-The translation and correction prompts can be customized by editing the template files in `data/prompts/`:
+Translation and correction prompts are plain-text templates in `data/prompts/`:
 
-- `data/prompts/translate.txt` - Translation prompt template
-- `data/prompts/correct.txt` - Grammar correction prompt template
+- `translate_uncensored.txt` / `translate.txt` - translation (the `_uncensored`
+  variant is tried first, then the plain one)
+- `correct_uncensored.txt` / `correct.txt` - grammar correction
 
-**Fallback hierarchy:**
+They use Python `{variable}` placeholders. Edit them to change style or rules.
 
-1. Try custom templates in `data/prompts/`
-2. Fall back to embedded template in code
+### Glossary
 
-These files use Python's `{variable}` syntax for placeholders. Edit them to adjust the translation style, add language-specific rules, or modify the behavior.
+Per-language YAML enforcing consistent terminology, e.g. `data/ro_glossary.yaml`
+and `data/ro_uncensored_glossary.yaml`:
 
-### Custom Glossary
-
-Create a glossary JSON file to enforce consistent translations for game-specific terms:
-
-```json
-{
-  "health potion": "poțiune de viață",
-  "magic points": "puncte magice",
-  "inventory": "inventar"
-}
+```yaml
+health potion: poțiune de viață
+magic points: puncte magice
+inventory: inventar
 ```
 
-Place in `data\<language_code>_glossary.json` (e.g., `data\ro_glossary.json`, `data\es_glossary.json`, `data\ja_glossary.json`)
+### Correction rules
 
-**Template:** See `data/ro_glossary.json` for an example with UI elements, character stats, and common game terms.
-
-**Fallback Hierarchy:**
-
-1. `data\<code>_glossary.json` (language-specific glossary)
-2. No glossary (translation without term enforcement)
-
-Both Aya-23-8B and MADLAD-400-3B support glossaries.
-
-### Grammar Correction Rules
-
-Create correction rules JSON file for pattern-based corrections:
-
-```json
-{
-  "exact_replacements": {
-    "wrong phrase": "correct phrase"
-  },
-  "verb_conjugations": [
-    {
-      "pattern": "incorrectă forma",
-      "replacement": "formă corectă"
-    }
-  ],
-  "protected_words": ["ProperName", "GameTitle"]
-}
-```
-
-Place in `data\<language>_corrections.json`
+Per-language YAML of pattern fixes applied after translation, e.g.
+`data/ro_uncensored_corrections.yaml`: exact replacements, source-conditioned
+replacements, verb conjugations, gender agreement, and protected words. These
+matter most for the SFW-trained MT models (see `models/README-MODELS.md`).
 
 ## File Structure
 
 ```
-├── src/                    # Core translation modules
-│   ├── models.py          # Type-safe data structures for modular pipeline
-│   ├── extract.py      # Extract .rpy → clean YAML + tags JSON
-│   ├── merger.py          # Merge YAML + JSON → .rpy with validation
-│   ├── batch_translator.py # Context-aware batch translation
-│   ├── renpy_utils.py     # Ren'Py parsing and tag handling utilities
-│   ├── core.py            # Aya23Translator class (original pipeline)
-│   └── prompts.py         # Translation/correction prompts
-├── scripts/               # Translation engine scripts (called by launchers)
-│   ├── translate_with_aya23.py     # Aya-23-8B translation engine
-│   ├── translate_with_madlad.py    # MADLAD-400-3B translation engine
-│   ├── correct.py       # Aya-23-8B grammar correction engine
-│   ├── benchmark.py       # BLEU benchmark script
-│   ├── common.ps1         # Shared PowerShell functions
-│   └── config_selector.ps1 # Interactive game/language selection
-├── tests/                 # Automated tests
-│   ├── test_end_to_end.py           # End-to-end translation tests
-│   ├── test_unit_renpy_tags.py           # Tag preservation tests
-│   └── test_unit_extract_merge.py     # Modular pipeline tests (NEW)
-├── data/                  # Prompts, glossaries, benchmarks, and correction rules
-│   ├── prompts/
-│   │   ├── translate.txt              # Translation prompt template (customizable)
-│   │   └── correct.txt                # Correction prompt template (customizable)
-│   ├── ro_glossary.json          # Example glossary template
-│   ├── ro_benchmark.json         # Example benchmark data template
-│   └── ro_corrections.json       # Example correction rules
-├── models/                # Model configs only (models live in the HF cache)
-│   ├── models_config.yaml    # Model registry (repos, languages, sizes)
-│   ├── compute_profiles.yaml # Per-tier hardware params
-│   └── current_config.yaml   # Active game/model/language selection
-├── tools/                 # External tools (gitignored)
-├── renpy/                 # Ren'Py SDK (gitignored)
-│   └── tools_config.json  # External tools configuration
-├── games/                 # Game directories (gitignored)
-│   └── <Game>/
-│       └── game/tl/<language>/
-│           ├── characters.json        # Character mappings (NEW)
-│           ├── *.rpy                  # Original translation files
-│           ├── *.parsed.yaml          # Clean text for editing (NEW)
-│           ├── *.tags.json            # Tags and metadata (NEW)
-│           └── *.translated.rpy       # Merged output (NEW)
-├── requirements.txt       # Python dependencies
-├── 0-setup.ps1            # Automated setup script
-├── 8-compare.ps1        # PowerShell launcher for benchmark.py
-├── 2-test.ps1             # Test runner
-├── 1-config.ps1           # Character discovery & game setup (NEW)
-├── 2-extract.ps1          # Extract .rpy → YAML/JSON (NEW)
-├── 3-translate.ps1        # Interactive launcher (selects model, language, game)
-├── 4-correct.ps1          # Interactive launcher for grammar correction
-├── 5-merge.ps1            # Merge YAML/JSON → .rpy (NEW)
-├── PIPELINE_USAGE.md      # Modular pipeline user guide (NEW)
-├── MODULARISATION_PLAN.md # Technical specification (NEW)
-└── IMPLEMENTATION_SUMMARY.md # Implementation details (NEW)
-
+.
+├── 0-setup.ps1                # setup (venv, deps, models, Ren'Py tools)
+├── 1-config.ps1               # game setup launcher
+├── 2-extract.ps1              # .rpy -> YAML launcher
+├── 3-translate.ps1            # translation launcher
+├── 4-correct.ps1              # grammar correction launcher
+├── 5-merge.ps1                # YAML -> .rpy launcher
+├── 7-test.ps1                 # test runner
+├── 8-compare.ps1              # benchmark-by-translating launcher
+├── 9-benchmark.ps1            # score-existing-translations launcher
+├── src/
+│   ├── setup.py               # setup implementation (8-step flow)
+│   ├── extract.py             # .rpy -> .parsed.yaml + .tags.yaml
+│   ├── merge.py               # .parsed.yaml + .tags.yaml -> .translated.rpy
+│   ├── renpy_utils.py         # Ren'Py tag handling + shared utils
+│   ├── config_utils.py        # shared game-config loading
+│   ├── models.py              # typed data structures for the pipeline
+│   ├── hardware.py            # compute-tier detection / profile
+│   ├── prompts.py             # prompt-template loading
+│   └── translators/           # one module per model backend
+│       ├── llama_cpp_translator.py   # GGUF LLMs (Aya, AyaExpanse, EuroLLM)
+│       ├── aya23_translator.py
+│       ├── madlad400_translator.py
+│       ├── mbartRo_translator.py
+│       ├── nllb200_translator.py
+│       ├── seamless96_translator.py
+│       ├── helsinkyRo_translator.py
+│       └── translator_utils.py
+├── scripts/
+│   ├── config.py              # game configuration
+│   ├── translate.py           # ModularBatchTranslator engine + dispatch
+│   ├── correct.py             # grammar correction engine
+│   ├── correct_utils.py       # correction argument helper (used by 4-correct.ps1)
+│   ├── compare.py             # translate + score
+│   ├── benchmark.py           # score existing translations
+│   └── config_selector.py     # interactive selection helpers
+├── data/
+│   ├── prompts/               # translate(.|_uncensored).txt, correct(.|_uncensored).txt
+│   ├── ro_glossary.yaml       # glossary templates
+│   ├── ro_*_benchmark.yaml    # benchmark reference data
+│   └── ro_uncensored_corrections.yaml
+├── models/
+│   ├── models_config.yaml     # model registry (repos, languages, sizes)
+│   ├── compute_profiles.yaml  # per-tier hardware params + batch sizes
+│   ├── current_config.yaml    # active game/model/language selection
+│   └── README-MODELS.md       # model comparison, benchmarks, setup details
+├── renpy/                     # Ren'Py SDK + tools (gitignored except rpaExtract/unRen)
+│   ├── rpaExtract.exe
+│   └── unRen/
+├── games/                     # game directories (gitignored except Example)
+│   └── Example/               # bundled demo game (see its README.md)
+├── tests/                     # pytest suite (see TESTS-README.md)
+├── requirements.txt
+├── pyproject.toml
+└── DECOUPLING PLAN README.md  # plan to split core engine from the Ren'Py plugin
 ```
+
+## Models
+
+13 models are supported across two backends (llama.cpp GGUF for the LLMs, HF
+Transformers for the MT models). For the full ranked comparison, per-model error
+analysis, VRAM requirements, and the EN->RO benchmark results, see
+**`models/README-MODELS.md`**.
 
 ## License & Acknowledgments
 
-MIT License - Use for any purpose, including commercial projects.
+MIT License - use for any purpose, including commercial projects.
 
-Acknowledgments
-
-- **Models:**
-  - [Aya-23-8B](https://huggingface.co/CohereForAI/aya-23-8B) by Cohere For AI
-  - [MADLAD-400-3B](https://huggingface.co/google/madlad400-3b-mt) by Google Research
-- **Quantization:**
-  - [bartowski&#39;s GGUF conversion](https://huggingface.co/bartowski/aya-23-8B-GGUF)
-  - [unsloth&#39;s 4-bit conversion](https://huggingface.co/unsloth/madlad400-3b-mt-4bit)
-- **Frameworks:**
-  - [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) (Aya-23-8B)
-  - [unsloth](https://github.com/unslothai/unsloth) (MADLAD-400-3B)
+- **Models:** [EuroLLM](https://huggingface.co/utter-project),
+  [Aya-23 / Aya Expanse](https://huggingface.co/CohereForAI) by Cohere For AI,
+  [MADLAD-400](https://huggingface.co/google/madlad400-3b-mt) by Google,
+  [SeamlessM4T / NLLB / MBART](https://huggingface.co/facebook) by Meta,
+  [OPUS-MT](https://huggingface.co/Helsinki-NLP) by Helsinki-NLP.
+- **Frameworks:** [llama-cpp-python](https://github.com/abetlen/llama-cpp-python),
+  [transformers](https://github.com/huggingface/transformers),
+  [unbabel-comet](https://github.com/Unbabel/COMET).

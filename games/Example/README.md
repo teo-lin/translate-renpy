@@ -1,120 +1,85 @@
 # Example Ren'Py Game - Translation Demo
 
-This is a **minimal example Ren'Py visual novel** used for testing translation workflows.
+A minimal example Ren'Py visual novel used for testing the translation pipeline
+end to end. It is the fixture for `tests/test_e2e_example.py`.
 
 ## Structure
 
 ```
 Example/
-├── README.md                    # This file
+├── README.md
 └── game/
-    ├── script.rpy              # Source Ren'Py script (English)
+    ├── script.rpy                          # source Ren'Py script (English)
     └── tl/
         └── romanian/
-            ├── script.rpy      # Romanian translation file
-            ├── characters.json # Character mappings (for modular pipeline)
-            └── script.rpy.backup # Backup (created by tests)
+            ├── Cell01_Academy.rpy                       # translation file (Ren'Py format)
+            ├── Cell01_Academy.parsed.yaml               # extracted clean text (editable)
+            ├── Cell01_Academy.tags.yaml                 # extracted tags + metadata
+            ├── Cell01_Academy.translated.rpy            # merged output
+            ├── Cell01_Academy.translated.corrections.txt# correction-pass log
+            └── characters.yaml                          # character mappings
 ```
 
 ## What's Included
 
-This example contains **20 dialogue blocks + 6 string blocks (menu choices)** featuring:
+A short campus-introduction scene: a new student arrives at an academy and is
+shown around by Sarah, who later introduces her friend Alex.
 
 ### Characters
-- **narrator** - Story narration
-- **mc** (Main Character) - The player character with variable name `[player_name]`
-- **sarah** - A friendly student who shows the player around
-- **alex** - Sarah's best friend
 
-### Ren'Py Features Demonstrated
+- **narrator** - story narration
+- **mc** - the player character, with variable name `[player_name]`
+- **sarah** - a student who gives the tour
+- **alex** - Sarah's friend
 
-1. **Basic dialogue** - Simple conversational text
-2. **Variables** - `[player_name]` dynamic substitution
-3. **Formatting tags**:
-   - `{b}bold{/b}` - Bold text
-   - `{color=#ff69b4}colored{/color}` - Colored text
-   - `{size=18}sized{/size}` - Custom font size
-4. **Scene headers** - Location and time indicators
-5. **Multi-line conversations** - Natural dialogue flow
+### Ren'Py features demonstrated
 
-## Story Summary
+1. Basic dialogue and multi-line conversation
+2. Variable substitution: `[player_name]`
+3. Formatting tags: `{b}bold{/b}`, `{color=#ff69b4}colored{/color}`,
+   `{size=18}sized{/size}`
+4. Both dialogue blocks and string/menu-choice blocks
 
-A new student arrives at an academy and meets Sarah, who gives them a tour. They visit the library, have lunch at the cafeteria, and meet Sarah's friend Alex. A welcoming introduction to campus life.
+## Usage (Modular Pipeline)
 
-## Usage
-
-### Option 1: Original Pipeline (All-in-One)
-
-Translate directly using the original pipeline:
+From the repo root, after running `.\0-setup.ps1`:
 
 ```powershell
-# Using interactive launcher (recommended)
+# 1. Configure this game (sets path, language, model)
+.\1-config.ps1 -GamePath "games\Example" -Language ro -Model euroLLM9b
+
+# 2. Extract clean text + tags
+.\2-extract.ps1 -GameName Example -All
+#    Creates: Cell01_Academy.parsed.yaml and Cell01_Academy.tags.yaml
+
+# 3. Translate (or hand-edit the .parsed.yaml)
 .\3-translate.ps1
 
-# Or directly with Python
-python src\translators\aya23_translator.py games\Example\game\tl\romanian\script.rpy --language ro
+# 4. (optional) Grammar/pattern correction
+.\4-correct.ps1 "games\Example\game\tl\romanian"
+
+# 5. Merge back to Ren'Py
+.\5-merge.ps1 -GameName Example -All
+#    Creates: Cell01_Academy.translated.rpy (tags restored, validated)
 ```
 
-### Option 2: Modular Pipeline (Extract → Translate → Merge)
-
-Use the new modular pipeline for better control:
+## Automated Test
 
 ```powershell
-# Step 1: Extract clean text and tags
-.\2-extract.ps1 -Source "script.rpy"
-# Creates: script.parsed.yaml (human-editable) and script.tags.json (metadata)
+# Run the e2e example test directly
+.\venv\Scripts\python.exe .\tests\test_e2e_example.py
 
-# Step 2: Translate (or manually edit the YAML file)
-.\3-translate.ps1
-# Updates: script.parsed.yaml with translations
-
-# Step 3: Merge back to .rpy format
-.\5-merge.ps1 -Source "script"
-# Creates: script.translated.rpy (with tags restored and validation)
+# Or via the interactive runner
+.\7-test.ps1
 ```
 
-**Benefits of modular approach:**
-- Human review between steps
-- Edit YAML files manually
-- Git-friendly diffs
-- Integrity validation before final output
-
-### Automated Test
-
-Run the automated test that translates and verifies:
-
-```powershell
-# Run test (automatically restores original after)
-venv\Scripts\python.exe tests\test_e2e_example_game.py
-
-# Or use the test runner
-.\2-test.ps1
-```
-
-The test will:
-1. Back up the original file (3 sample translations)
-2. Translate the remaining 17 empty strings
-3. Verify translations were added
-4. Restore the file to its original state
-
-### File State
-
-The Romanian translation file (`game/tl/romanian/script.rpy`) contains:
-- **Total blocks:** 26 (20 dialogue + 6 string/menu choices)
-- **Translated:** 4 blocks (3 dialogue + 1 string) ≈ 15%
-- **Untranslated:** 22 blocks (17 dialogue + 5 strings) ≈ 85%
-
-This mix allows testing:
-- Skipping already-translated blocks
-- Processing untranslated blocks
-- Preserving existing translations
-- Handling both dialogue and string block types
-
-After running translation, all 26 blocks will be filled. The automated test restores it back to the original state (4 translated) for the next run.
+The test backs up the original translation file, runs the pipeline, verifies the
+output, and restores the file to its original state.
 
 ## Notes
 
-- All Ren'Py tags (`{b}`, `{color=...}`, etc.) are preserved exactly
-- Variables in square brackets `[player_name]` remain untranslated
-- The file is a real Ren'Py translation file format
-- Comments show the original English text for reference
+- All Ren'Py tags (`{b}`, `{color=...}`, etc.) are preserved exactly: stripped on
+  extract, restored on merge.
+- Square-bracket variables like `[player_name]` are left untranslated.
+- Parsed YAML holds clean translatable text only; tag/structure metadata lives in
+  the matching `.tags.yaml`.
