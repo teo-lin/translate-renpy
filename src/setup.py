@@ -236,13 +236,13 @@ class ProjectSetup:
             if files:
                 quant = self._quant_for_tier(model, self.tier)
                 size = model.get(f'size_{quant}') or '?'
-                quant_label = f"{quant} Â· {size}"
+                quant_label = f"{quant} · {size}"
             else:
                 filename = model.get('file') or ''
                 m = re.search(r'Q\d+_K_[MS]', filename)
                 quant = m.group(0) if m else None
                 size = model.get('size') or '?'
-                quant_label = f"{quant} Â· {size}" if quant else size
+                quant_label = f"{quant} · {size}" if quant else size
             return (
                 f"  [{num:2d}] {model['name']}  [{quant_label}]\n"
                 f"      - Supports {supported_count}/{len(self.selected_languages)} of your languages\n"
